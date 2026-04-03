@@ -29,6 +29,8 @@ project(gripper_rp2350 C CXX)
 
 pico_sdk_init()
 
+add_subdirectory(include)
+
 add_executable(gripper
     src/main.cpp
 )
@@ -40,6 +42,7 @@ target_link_libraries(gripper
     hardware_gpio
     pico_time
     hardware_sync
+    quadrature_encoder
 )
 
 # stdio transport
