@@ -9,11 +9,11 @@
 #include "hardware/sync.h"
 
 // --- Configuration ---
-#define ADC_CHANNEL     2u           // ADC channel to sample (0-3 for GPIO, 4 for temp)
-#define ADC_GPIO_PIN    28u          // Corresponding GPIO pin (26 + channel for ch 0-3)
-#define ADC_VREF        3.3f        // Reference voltage in volts
-#define ADC_RESOLUTION  4096.0f    // 12-bit ADC → 2^12 steps
-#define SAMPLE_DELAY_MS 50u         // Delay between samples in milliseconds
+#define ADC_CHANNEL     2u     
+#define ADC_GPIO_PIN    28u    
+#define ADC_VREF        3.3f   
+#define ADC_RESOLUTION  4096.0f
+#define SAMPLE_DELAY_MS 50u
 #define EN_MOTOR_PIN    5u
 #define PH_MOTOR_PIN    6u
 #define ENCODER_CH_A    27u
@@ -21,14 +21,17 @@
 #define CPR             48u
 #define GEAR_RATIO      26u
 #define OUTPUT_CPR     (CPR * GEAR_RATIO)
-#define PWM_WRAP        7499u        // PWM freq = 20kHz
+#define PWM_WRAP        7499u                   // PWM freq = 20kHz
 #define PWM_CLK_DIV     1.0f
+#define SPEED_SETPOINT  200.0f
 
 // --- Motor PWM ---
-static uint8_t count = 0;
-static bool dir = false;
 static uint slice_num;
 static uint pwm_chan;
+
+// --- Motor Speed ---
+absolute_time_t last_time = get_absolute_time();
+int32_t last_count = 0;
 
 // --- Initialization ---
 void setup(void);
@@ -37,19 +40,16 @@ void motor_pwm_init(void);
 void digital_gpio_init();
 void encoders_gpio_init(void);
 
-// --- ISR ---
-void encoder_isr(uint gpio, uint32_t events);
+// --- Motor control ---
+float get_current_speed(int32_t current_count);
 
 int main(void) {
     setup();
 
     pwm_set_chan_level(slice_num, pwm_chan, 3750);
-    absolute_time_t last_time = get_absolute_time();
-    int32_t last_count = 0;
 
     while (true) {
         quadrature_encoder_update();
-        quadrature_encoder_debug();
 
         /* Take a single 12-bit sample */
         uint16_t raw = adc_read();
@@ -61,30 +61,9 @@ int main(void) {
 
         int32_t current_count = quadrature_encoder_get_count();
 
-        absolute_time_t now      = get_absolute_time();
-        int32_t         delta    = current_count - last_count;
-        float           dt_sec   = absolute_time_diff_us(last_time, now) / 1e6f;
-
-        float counts_per_sec = delta / dt_sec;
-        float rps            = counts_per_sec / OUTPUT_CPR;
-        float rpm            = rps * 60.0f;
-
-        last_count = current_count;
-        last_time  = now;
-
-        printf("Count: %ld | RPM: %.2f | Dir: %s\n",
+        printf("Count: %ld | RPM: %.2f\n",
                current_count,
-               std::fabs(rpm),
-               (delta >= 0) ? "CW" : "CCW");
-
-        if(count >= 200) {
-            count = 0;
-            dir = !dir;
-            gpio_put(PH_MOTOR_PIN, dir);
-            printf("Cambio de sentido: %d\n", dir);
-        } else {
-            count++;
-        };        
+               std::fabs(get_current_speed(current_count)));
 
         sleep_ms(SAMPLE_DELAY_MS);
     }
@@ -93,7 +72,6 @@ int main(void) {
 }
 
 void setup(void) {
-    /* Initialize stdio (UART or USB, depending on CMakeLists.txt) */
     stdio_init_all();
 
     /* Give the host a moment to attach a serial terminal */
@@ -108,13 +86,10 @@ void setup(void) {
 }
 
 void fsr_adc_init(void) {
-    /* ── ADC initialisation ──────────────────────────────────────── */
-    adc_init();                             // Power up and reset the ADC block
+    adc_init();
 
-    /* Only call adc_gpio_init() for external channels (0-3).
-       Channel 4 is the internal temperature sensor — no GPIO needed. */
     #if ADC_CHANNEL < 4
-        adc_gpio_init(ADC_GPIO_PIN);            // Set GPIO to ADC input (hi-Z, no pull)
+        adc_gpio_init(ADC_GPIO_PIN);
     #endif
 
     adc_select_input(ADC_CHANNEL);          // Select the active channel
@@ -138,5 +113,20 @@ void digital_gpio_init(void) {
     // GPIO config
     gpio_init(PH_MOTOR_PIN);
     gpio_set_dir(PH_MOTOR_PIN, GPIO_OUT);
-    gpio_put(PH_MOTOR_PIN, dir);
+    gpio_put(PH_MOTOR_PIN, false);
+}
+
+float get_current_speed(int32_t current_count) {
+    absolute_time_t now      = get_absolute_time();
+    int32_t         delta    = current_count - last_count;
+    float           dt_sec   = absolute_time_diff_us(last_time, now) / 1e6f;
+
+    float counts_per_sec = delta / dt_sec;
+    float rps            = counts_per_sec / OUTPUT_CPR;
+    float rpm            = rps * 60.0f;
+
+    last_count = current_count;
+    last_time  = now;
+
+    return rpm;
 }
