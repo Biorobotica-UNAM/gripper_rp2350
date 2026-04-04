@@ -61,6 +61,11 @@ void quadrature_encoder_init(PIO pio, uint sm, uint gpio_a, uint gpio_b, float c
         (1u << gpio_a) | (1u << gpio_b));
     pio_sm_init(pio, sm, offset, &c);
 
+    uint8_t init_ab = (gpio_get(gpio_a) ? 2u : 0u) | (gpio_get(gpio_b) ? 1u : 0u);
+    pio_sm_put(pio, sm, init_ab);
+    pio_sm_exec(pio, sm, pio_encode_pull(false, false)); // pull OSR from FIFO  
+    pio_sm_exec(pio, sm, pio_encode_mov(pio_y, pio_osr)); // Y = OSR
+
     // ── DMA ────────────────────────────────────────────────────────────────
     s_dma_chan = dma_claim_unused_channel(true);
 
@@ -91,16 +96,17 @@ void quadrature_encoder_init(PIO pio, uint sm, uint gpio_a, uint gpio_b, float c
     pio_sm_set_enabled(pio, sm, true);
     dma_channel_start(s_dma_chan);
 
-    // At 100kHz sample rate, wait long enough for DMA to settle (a few ms)
     sleep_ms(10);
 
-    // Sync read index to wherever DMA currently is
+    // Start consuming from current write position — not from 0
     uint32_t write_addr = dma_channel_hw_addr(s_dma_chan)->write_addr;
-    s_read_idx = ((write_addr - (uint32_t)s_dma_buf) / sizeof(uint32_t))
-                 & (QE_DMA_BUFFER_SIZE - 1);
+    uint32_t write_idx  = ((write_addr - (uint32_t)s_dma_buf) / sizeof(uint32_t))
+                          & (QE_DMA_BUFFER_SIZE - 1);
+    s_read_idx = write_idx;
 
-    // Seed prev_ab from the actual current pin state
-    s_prev_ab = (uint8_t)(s_dma_buf[s_read_idx > 0 ? s_read_idx - 1 : QE_DMA_BUFFER_SIZE - 1] & 0x03);
+    // Seed prev_ab from the last entry DMA wrote
+    uint32_t last = s_dma_buf[(write_idx - 1u) & (QE_DMA_BUFFER_SIZE - 1)];
+    s_prev_ab = last & 0x3u;
 }
 
 // ---------------------------------------------------------------------------
@@ -116,11 +122,7 @@ void quadrature_encoder_update(void) {
     while (s_read_idx != write_idx) {
         uint32_t raw = s_dma_buf[s_read_idx];
 
-        // Bit 31 = gpio_b (IN pin, shifted in first → MSB)
-        // Bit 30 = gpio_a (JMP pin, shifted in second)
-        uint8_t b = (raw >> 0) & 1u;
-        uint8_t a = (raw >> 1) & 1u;
-        uint8_t new_ab = (b << 1) | a;   // matches QEM table layout
+        uint8_t new_ab = raw & 0x3u;   // matches QEM table layout
 
         s_count += QEM[(s_prev_ab << 2) | new_ab];
         s_prev_ab = new_ab;

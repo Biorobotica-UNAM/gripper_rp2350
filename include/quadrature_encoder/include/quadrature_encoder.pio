@@ -1,20 +1,29 @@
-; quadrature_encoder.pio
-; IN base  = gpio_b  (GPIO 7)  → A is at bit 31 after 1-bit shift
-; JMP PIN  = gpio_a  (GPIO 27) → read via branch
-; OSR is pre-loaded with 1 in init so we can shift a known 1.
-
 .program quadrature_encoder
-
-    set     x, 1            ; X = 1, used to push a high bit. Runs once at start.
+; IN base = gpio_b (bit 0),  JMP PIN = gpio_a
+; Y = previous AB state (bits 1:0, layout: bit1=A, bit0=B)
+; Pushes new AB on every change
 
 .wrap_target
 init:
-    in      pins, 1         ; Read gpio_b (IN base) → bit 31 of ISR
-    jmp     pin, a_high     ; Read gpio_a (JMP PIN) → branch if high
-    in      null, 1         ; gpio_a low → shift 0 into ISR bit 30
-    push    noblock         ; ISR = {b, a, 30'bX} → top 2 bits are [b,a]
-    jmp     init
-a_high:
-    in      x, 1            ; gpio_a high → shift 1 into ISR bit 30
-    push    noblock
+    ; --- sample both pins into ISR ---
+    mov  isr, null
+    in   pins, 1          ; ISR[0] = B
+
+    jmp  pin, a_is_1
+    in   null, 1          ; ISR[1] = 0 (A=0)
+    jmp  do_compare
+a_is_1:
+    set  x, 1
+    in   x,    1          ; ISR[1] = 1 (A=1)
+
+do_compare:
+    ; new_ab is in ISR bits [1:0]
+    ; we already used it, so this is fine
+    mov  x, isr
+    jmp  x!=y, changed
+    jmp init
+
+changed:
+    push noblock
+    mov  y, x
 .wrap

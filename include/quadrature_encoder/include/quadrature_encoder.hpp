@@ -3,9 +3,7 @@
 #include <cstdio>
 #include <cstdint>
 
-// 100,000 samples/sec × 0.5 sec loop + 2× safety margin = 100,000
-// Round up to next power of 2:
-#define QE_DMA_BUFFER_SIZE  4096u    // 256KB, covers 0.65 sec at 100kHz
+#define QE_DMA_BUFFER_SIZE  512u    // 2KB, at ~8.32kHz
 
 void    quadrature_encoder_init(PIO pio, uint sm, uint gpio_a, uint gpio_b, float clk_div);
 void    quadrature_encoder_update(void);

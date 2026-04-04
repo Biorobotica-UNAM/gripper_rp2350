@@ -13,7 +13,7 @@
 #define ADC_GPIO_PIN    28u    
 #define ADC_VREF        3.3f   
 #define ADC_RESOLUTION  4096.0f
-#define SAMPLE_DELAY_MS 50u
+#define SAMPLE_DELAY_MS 1u
 #define EN_MOTOR_PIN    5u
 #define PH_MOTOR_PIN    6u
 #define ENCODER_CH_A    27u
@@ -59,12 +59,16 @@ int main(void) {
 
         printf("Raw: %4u  |  Voltage: %.4f V\n", raw, voltage);
 
-        int32_t current_count = quadrature_encoder_get_count();
+        absolute_time_t now = get_absolute_time();
+        int64_t elapsed_us = absolute_time_diff_us(last_time, now);
 
-        printf("Count: %ld | RPM: %.2f\n",
-               current_count,
-               std::fabs(get_current_speed(current_count)));
+        if (elapsed_us >= 100000) {
+            int32_t current_count = quadrature_encoder_get_count();
 
+            printf("Count: %ld | RPM: %.2f\n",
+                   current_count,
+                   std::fabs(get_current_speed(current_count)));
+        }
         sleep_ms(SAMPLE_DELAY_MS);
     }
 
@@ -80,7 +84,7 @@ void setup(void) {
     fsr_adc_init();
     motor_pwm_init();
     digital_gpio_init();
-    quadrature_encoder_init(pio0, 0, ENCODER_CH_A, ENCODER_CH_B, 625.0f);
+    quadrature_encoder_init(pio0, 0, ENCODER_CH_A, ENCODER_CH_B, 1.0f);
 
     printf("XIAO RP2350 correctly configured!\n");
 }
