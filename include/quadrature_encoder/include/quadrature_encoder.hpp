@@ -1,7 +1,7 @@
 #pragma once
-#include "hardware/pio.h"
 #include <cstdio>
 #include <cstdint>
+#include "hardware/pio.h"
 
 #define QE_DMA_BUFFER_SIZE  512u    // 2KB, at ~8.32kHz
 

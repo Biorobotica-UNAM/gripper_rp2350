@@ -1,12 +1,13 @@
 #include <stdio.h>
 #include <cmath>
 #include "pico/stdlib.h"
-#include "quadrature_encoder.hpp"
 #include "pico/time.h"
 #include "hardware/adc.h"
 #include "hardware/pwm.h"
 #include "hardware/gpio.h"
-#include "hardware/sync.h"
+#include "hardware/timer.h"
+#include "quadrature_encoder.hpp"
+#include "motor_controller.hpp"
 
 // --- Configuration ---
 #define ADC_CHANNEL     2u     
@@ -21,32 +22,31 @@
 #define CPR             48u
 #define GEAR_RATIO      26u
 #define OUTPUT_CPR     (CPR * GEAR_RATIO)
-#define PWM_WRAP        7499u                   // PWM freq = 20kHz
-#define PWM_CLK_DIV     1.0f
+#define K_P             0.3f
+#define K_I             0.05f
+#define K_D             0.001f
 #define SPEED_SETPOINT  200.0f
-
-// --- Motor PWM ---
-static uint slice_num;
-static uint pwm_chan;
-
-// --- Motor Speed ---
-absolute_time_t last_time = get_absolute_time();
-int32_t last_count = 0;
+#define CONTROL_HZ      100
+#define CONTROL_US      (1000000 / CONTROL_HZ)
 
 // --- Initialization ---
 void setup(void);
 void fsr_adc_init(void);
-void motor_pwm_init(void);
 void digital_gpio_init();
 void encoders_gpio_init(void);
 
-// --- Motor control ---
+// --- Motor Control ---
+repeating_timer_t timer;
+volatile bool ctrl = false;
+absolute_time_t last_time = get_absolute_time();
+int32_t last_count = 0;
+MotorController motor(K_P, K_I, K_D, EN_MOTOR_PIN);
+
 float get_current_speed(int32_t current_count);
+bool control_callback(repeating_timer_t *rt);
 
 int main(void) {
     setup();
-
-    pwm_set_chan_level(slice_num, pwm_chan, 3750);
 
     while (true) {
         quadrature_encoder_update();
@@ -62,8 +62,14 @@ int main(void) {
         absolute_time_t now = get_absolute_time();
         int64_t elapsed_us = absolute_time_diff_us(last_time, now);
 
-        if (elapsed_us >= 100000) {
+        printf("Control flag: %d\n", ctrl);
+
+        if (ctrl) {
+            ctrl = false;
+
             int32_t current_count = quadrature_encoder_get_count();
+
+            motor.MotorControl(SPEED_SETPOINT, get_current_speed(current_count));
 
             printf("Count: %ld | RPM: %.2f\n",
                    current_count,
@@ -81,8 +87,9 @@ void setup(void) {
     /* Give the host a moment to attach a serial terminal */
     sleep_ms(2000);
 
+    add_repeating_timer_us(-CONTROL_US, control_callback, NULL, &timer);
+
     fsr_adc_init();
-    motor_pwm_init();
     digital_gpio_init();
     quadrature_encoder_init(pio0, 0, ENCODER_CH_A, ENCODER_CH_B, 1.0f);
 
@@ -97,20 +104,6 @@ void fsr_adc_init(void) {
     #endif
 
     adc_select_input(ADC_CHANNEL);          // Select the active channel
-}
-
-void motor_pwm_init(void) {
-    // PWM config
-    gpio_set_function(EN_MOTOR_PIN, GPIO_FUNC_PWM);
-    slice_num = pwm_gpio_to_slice_num(EN_MOTOR_PIN);
-    pwm_chan = pwm_gpio_to_channel(EN_MOTOR_PIN);
-
-    pwm_config config = pwm_get_default_config();
-    pwm_config_set_clkdiv(&config, PWM_CLK_DIV);
-    pwm_config_set_wrap(&config, PWM_WRAP);
-    
-    pwm_init(slice_num, &config, true);
-    pwm_set_chan_level(slice_num, pwm_chan, 0);
 }
 
 void digital_gpio_init(void) {
@@ -133,4 +126,9 @@ float get_current_speed(int32_t current_count) {
     last_time  = now;
 
     return rpm;
+}
+
+bool control_callback(repeating_timer_t *rt) {
+    ctrl = true;
+    return ctrl;
 }

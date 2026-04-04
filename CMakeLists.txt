@@ -37,12 +37,13 @@ add_executable(gripper
 
 target_link_libraries(gripper
     pico_stdlib
+    pico_time
     hardware_adc
     hardware_pwm
     hardware_gpio
-    pico_time
-    hardware_sync
+    hardware_timer
     quadrature_encoder
+    motor_controller
 )
 
 # stdio transport
