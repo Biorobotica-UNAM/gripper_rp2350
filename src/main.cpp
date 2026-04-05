@@ -26,7 +26,7 @@
 #define K_I             0.05f
 #define K_D             0.001f
 #define SPEED_SETPOINT  200.0f
-#define CONTROL_HZ      100
+#define CONTROL_HZ      1000
 #define CONTROL_US      (1000000 / CONTROL_HZ)
 
 // --- Initialization ---
@@ -49,10 +49,12 @@ int main(void) {
     setup();
 
     while (true) {
-        quadrature_encoder_update();
+        static int32_t current_count;
+        static float current_speed;
+        static uint16_t raw;
 
         /* Take a single 12-bit sample */
-        uint16_t raw = adc_read();
+        raw = adc_read();
 
         /* Convert raw value to voltage */
         float voltage = raw * (ADC_VREF / ADC_RESOLUTION);
@@ -67,13 +69,15 @@ int main(void) {
         if (ctrl) {
             ctrl = false;
 
-            int32_t current_count = quadrature_encoder_get_count();
+            quadrature_encoder_update();
+            current_count = quadrature_encoder_get_count();
+            current_speed = get_current_speed(current_count);
 
-            motor.MotorControl(SPEED_SETPOINT, get_current_speed(current_count));
+            motor.MotorControl(SPEED_SETPOINT, current_speed);
 
             printf("Count: %ld | RPM: %.2f\n",
                    current_count,
-                   std::fabs(get_current_speed(current_count)));
+                   std::fabs(current_speed));
         }
         sleep_ms(SAMPLE_DELAY_MS);
     }

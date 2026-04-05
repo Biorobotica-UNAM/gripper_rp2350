@@ -33,6 +33,7 @@ void MotorController::MotorControl(float setpoint, float current_speed) {
 
 	printf("Control signal: %.2f\n", this->u[1]);
 	pwm_set_chan_level(this->slice_num, this->pwm_chan, (uint16_t)(this->u[1] * (PWM_WRAP - 50)));
+	// pwm_set_chan_level(this->slice_num, this->pwm_chan, (uint16_t)2000);
 
 	this->u[0] = this->u[1];
 	this->err[0] = this->err[1];

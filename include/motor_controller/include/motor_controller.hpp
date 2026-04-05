@@ -4,7 +4,8 @@
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
 
-#define PWM_WRAP        7499u                   // PWM freq = 20kHz
+// PWM freq = 20kHz
+#define PWM_WRAP        7499u
 #define PWM_CLK_DIV     1.0f
 
 class MotorController {
