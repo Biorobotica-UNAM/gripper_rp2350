@@ -19,11 +19,15 @@ MotorController::MotorController(float k_p, float k_i, float k_d, uint8_t pwm_pi
 }
 
 void MotorController::MotorControl(float setpoint, float current_speed) {
-	this->err[2] = setpoint - current_speed; 
+	static uint16_t pwm_level;
+
+	this->err[2] = setpoint - fabs(current_speed);
 
 	this->u[1] = u[0] + this->kp * (this->err[2] - this->err[1]) 
 					+ this->ki * (this->err[2] + this->err[1]) / 2.0f 
 					+ this->kd * (this->err[2] - 2 * this->err[1] + this->err[0]);
+
+	printf("Control signal: %.2f\n", this->u[1]);
 
 	if (this->u[1] > 1.0f) {
 		this->u[1] = 1;
@@ -31,9 +35,8 @@ void MotorController::MotorControl(float setpoint, float current_speed) {
 		this->u[1] = 0;
 	}
 
-	printf("Control signal: %.2f\n", this->u[1]);
-	pwm_set_chan_level(this->slice_num, this->pwm_chan, (uint16_t)(this->u[1] * (PWM_WRAP - 50)));
-	// pwm_set_chan_level(this->slice_num, this->pwm_chan, (uint16_t)2000);
+	pwm_level = (uint16_t)(this->u[1] * (PWM_WRAP - 50));
+	pwm_set_chan_level(this->slice_num, this->pwm_chan, pwm_level);
 
 	this->u[0] = this->u[1];
 	this->err[0] = this->err[1];

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdio>
+#include <cmath>
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
