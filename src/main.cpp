@@ -31,7 +31,9 @@
 #define K_D             0.001f
 #define CONTROL_HZ      1000
 #define CONTROL_US      (1000000 / CONTROL_HZ)
-#define MAX_RPM         370
+#define SETPOINT        150.0f
+
+#define CURRENT_THR     2.0f  // Volts
 
 // --- Initialization ---
 static void main_core0(void);
@@ -48,7 +50,6 @@ volatile bool ctrl = false;
 int32_t last_count = 0;
 MotorController motor(K_P, K_I, K_D, EN_MOTOR_PIN);
 static absolute_time_t last_time = get_absolute_time();
-static status_t motor_status = IDLE;
 
 static float get_current_speed(int32_t current_count);
 static bool control_callback(repeating_timer_t *rt);
@@ -68,9 +69,29 @@ void main_core0(void) {
     static int32_t current_count;
     static float current_speed;
     static uint16_t raw;
-    static int16_t setpoint = 0;
+    static uint16_t current;
+    static bool dir;
+    static float setpoint = 0.0f;
+    uint8_t cmd = STOP;
+    status_t motor_status = IDLE;
 
     while (true) {
+        // Gets action from Core 1
+        while (multicore_fifo_rvalid()) {
+            uint32_t msg = multicore_fifo_pop_blocking();
+            cmd          = (uint8_t)msg;
+        }
+
+        if (cmd == STOP) {
+            setpoint = 0.0f;
+        } else if (cmd == OPEN) {
+            setpoint = SETPOINT;
+            gpio_put(PH_MOTOR_PIN, true);
+        } else if (cmd == CLOSE) {
+            setpoint = SETPOINT;
+            gpio_put(PH_MOTOR_PIN, false);
+        }
+
         if (ctrl) {
             ctrl = false;
             // /* Take a single 12-bit sample */
@@ -81,13 +102,6 @@ void main_core0(void) {
 
             // printf("Raw: %4u  |  Voltage: %.4f V\n", raw, voltage);
 
-            // Gets target speed from Core 1
-            while (multicore_fifo_rvalid()) {
-                uint32_t msg = multicore_fifo_pop_blocking();
-                setpoint     = (int16_t)msg;
-                motor_status = MOVING;
-            }
-
             quadrature_encoder_update();
             current_count = quadrature_encoder_get_count();
 
@@ -96,10 +110,20 @@ void main_core0(void) {
 
             motor.Control(setpoint, current_speed);
 
-            report = ((uint32_t)fabs(current_speed) << 16) | motor_status;
-            if (multicore_fifo_wready())
-                multicore_fifo_push_blocking(report);
+            if (fabs(current_speed) > 0 && current < CURRENT_THR) {
+                motor_status = MOVING;
+            } else if (current > CURRENT_THR) {
+                motor_status = STALLED;    
+            } else if (fabs(current_speed) == 0 && current < CURRENT_THR) {
+                motor_status = IDLE;
             }
+
+            report = (((uint32_t)(((uint16_t)fabs(current_speed)) & 0x0FFF)) << 20) |
+                        (((uint32_t)((uint16_t)current & 0x0FFF)) << 8) |
+                        ((uint32_t)(motor_status & 0xFF));
+            if (!multicore_fifo_wready()) continue;
+            multicore_fifo_push_blocking(report);
+        }
     }
 }
 
@@ -116,16 +140,18 @@ void main_core1(void) {
         while (true) tight_loop_contents();
     }
 
-    uint16_t actual_rpm   = 0;
-    status_t motor_status = IDLE;
+    uint16_t actual_rpm     = 0;
+    uint16_t actual_current = 0;
+    status_t motor_status   = IDLE;
     uint8_t  pkt[8];
 
     while (true) {
         // Get status updates from Core 0
         while (multicore_fifo_rvalid()) {
-            uint32_t msg = multicore_fifo_pop_blocking();
-            actual_rpm   = (uint16_t)(msg >> 16);
-            motor_status = (status_t)(msg & 0xFFFF);
+            uint32_t msg   = multicore_fifo_pop_blocking();
+            actual_rpm     = (uint16_t)(msg >> 20 & 0x0FFF);
+            actual_current = (uint16_t)(msg >> 8 & 0x0FFF);
+            motor_status   = (status_t)(msg & 0x00FF);
         }
 
         // Check connection state
@@ -167,17 +193,11 @@ void main_core1(void) {
         _w5500_write_blocking(Sn_RX_RD, BSB_SOCK_REG(TCP_SOCKET), new_rd, 2);
         w5500_write_sock_byte(TCP_SOCKET, Sn_CR, Sn_CR_RECV);
 
-        // Process command
+        // Send command
         uint8_t  cmd        = pkt[0];
-        uint16_t target_rpm = ((uint16_t)pkt[2] << 8) | pkt[3];
-
-        if (cmd == 0x01) {
-            if (target_rpm > MAX_RPM) target_rpm = MAX_RPM;
-            multicore_fifo_push_blocking((uint32_t)target_rpm);
-            tcp_send_response(pkt, actual_rpm, MOVING);
-        } else if (cmd == 0x02) {
-            tcp_send_response(pkt, actual_rpm, motor_status);
-        }
+        if (!multicore_fifo_wready()) continue;
+        multicore_fifo_push_blocking((uint32_t)cmd);
+        tcp_send_response(pkt, actual_rpm, motor_status);
 
         sleep_ms(1);
     }

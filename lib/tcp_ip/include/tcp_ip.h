@@ -3,15 +3,22 @@
 #include "pico/stdlib.h"
 #include "w5500.h"
 
-#define LOCAL_PORT  8888
+#define LOCAL_PORT  7777
 #define TCP_SOCKET 0
 
 typedef enum {
-    IDLE,
-    MOVING,
-    REACHED,
-    STALLED
+    MOVING  = 0x01,
+    REACHED = 0x02,
+    IDLE    = 0x03,
+    STALLED = 0x04
 } status_t;
+
+enum {
+    OPEN         = 0x01,
+    CLOSE        = 0x02,
+    STOP         = 0x03,
+    QUERY_STATUS = 0x04
+};
 
 #ifdef __cplusplus
 extern "C" {
