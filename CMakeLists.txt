@@ -29,7 +29,7 @@ project(gripper_rp2350 C CXX)
 
 pico_sdk_init()
 
-add_subdirectory(include)
+add_subdirectory(lib)
 
 add_executable(gripper
     src/main.cpp
@@ -37,6 +37,7 @@ add_executable(gripper
 
 target_link_libraries(gripper
     pico_stdlib
+    pico_multicore
     pico_time
     hardware_adc
     hardware_pwm
@@ -44,6 +45,8 @@ target_link_libraries(gripper
     hardware_timer
     quadrature_encoder
     motor_controller
+    w5500
+    tcp_ip
 )
 
 # stdio transport

@@ -1,2 +1,0 @@
-add_subdirectory(quadrature_encoder)
-add_subdirectory(motor_controller)

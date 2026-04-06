@@ -1,0 +1,65 @@
+; ─────────────────────────────────────────────────────────────────────────────
+; w5500_spi.pio  —  Full-duplex SPI, Mode 0 (CPOL=0 CPHA=0), MSB-first
+;
+; Pin assignment (configured in C via w5500_spi_init()):
+;   SIDESET (1 pin) → SCK
+;   OUT     (1 pin) → MOSI
+;   IN      (1 pin) → MISO
+;
+; The state machine runs one instruction per half-clock cycle:
+;   - "out pins,1  side 0"  : drive MOSI, set SCK LOW
+;   - "in  pins,1  side 1"  : sample MISO, set SCK HIGH
+;
+; Autopull threshold = 8 bits  (DMA writes 32-bit words, left-justified)
+; Autopush threshold = 8 bits  (DMA reads  32-bit words, right-justified)
+; Both shift directions = LEFT (MSB first)
+;
+; SPI clock = sys_clk / (2 x clkdiv)
+; Example: 150 MHz sys_clk, clkdiv = 7.5 -> 10 MHz SPI clock
+; ─────────────────────────────────────────────────────────────────────────────
+
+.program w5500_spi
+.side_set 1
+
+.wrap_target
+    out pins, 1   side 0    ; SCK low  - shift MOSI bit out
+    in  pins, 1   side 1    ; SCK high - sample MISO bit in
+.wrap
+
+% c-sdk {
+#include "hardware/clocks.h"
+
+static inline void w5500_spi_init(PIO pio, uint sm, uint offset,
+                                uint pin_sck,
+                                uint pin_mosi,
+                                uint pin_miso,
+                                uint freq_hz)
+{
+    pio_gpio_init(pio, pin_sck);
+    pio_gpio_init(pio, pin_mosi);
+    pio_gpio_init(pio, pin_miso);
+
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_sck,  1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_mosi, 1, true);
+    pio_sm_set_consecutive_pindirs(pio, sm, pin_miso, 1, false);
+
+    pio_sm_config c = w5500_spi_program_get_default_config(offset);
+
+    sm_config_set_sideset_pins(&c, pin_sck);
+    sm_config_set_out_pins(&c, pin_mosi, 1);
+    sm_config_set_in_pins(&c, pin_miso);
+
+    // OUT: shift left (MSB first), autopull at 8 bits
+    sm_config_set_out_shift(&c, false, true, 8);
+
+    // IN:  shift left (MSB first), autopush at 8 bits
+    sm_config_set_in_shift(&c, false, true, 8);
+
+    // Each SPI bit = 2 PIO cycles
+    float clkdiv = (float)clock_get_hz(clk_sys) / (2.0f * (float)freq_hz);
+    sm_config_set_clkdiv(&c, clkdiv);
+
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

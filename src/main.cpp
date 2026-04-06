@@ -1,11 +1,14 @@
-#include <stdio.h>
+#include <cstdio>
 #include <cmath>
 #include "pico/stdlib.h"
+#include "pico/multicore.h"
 #include "pico/time.h"
 #include "hardware/adc.h"
 #include "hardware/pwm.h"
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
+#include "w5500.h"
+#include "tcp_ip.h"
 #include "quadrature_encoder.hpp"
 #include "motor_controller.hpp"
 
@@ -14,75 +17,170 @@
 #define ADC_GPIO_PIN    28u    
 #define ADC_VREF        3.3f   
 #define ADC_RESOLUTION  4096.0f
-#define SAMPLE_DELAY_MS 1u
+
 #define EN_MOTOR_PIN    5u
 #define PH_MOTOR_PIN    6u
 #define ENCODER_CH_A    27u
 #define ENCODER_CH_B    7u
 #define CPR             48u
 #define GEAR_RATIO      26u
-#define OUTPUT_CPR     (CPR * GEAR_RATIO)
-#define K_P             0.3f
-#define K_I             0.05f
+#define OUTPUT_CPR      (CPR * GEAR_RATIO)
+
+#define K_P             0.1f
+#define K_I             0.02f
 #define K_D             0.001f
-#define SPEED_SETPOINT  200.0f
 #define CONTROL_HZ      1000
 #define CONTROL_US      (1000000 / CONTROL_HZ)
+#define MAX_RPM         370
 
 // --- Initialization ---
-void setup(void);
-void fsr_adc_init(void);
-void digital_gpio_init();
-void encoders_gpio_init(void);
+static void main_core0(void);
+static void main_core1(void);
+
+static void setup(void);
+static void fsr_adc_init(void);
+static void digital_gpio_init();
+static void encoders_gpio_init(void);
 
 // --- Motor Control ---
 repeating_timer_t timer;
 volatile bool ctrl = false;
-absolute_time_t last_time = get_absolute_time();
 int32_t last_count = 0;
 MotorController motor(K_P, K_I, K_D, EN_MOTOR_PIN);
+static absolute_time_t last_time = get_absolute_time();
+static status_t motor_status = IDLE;
 
-float get_current_speed(int32_t current_count);
-bool control_callback(repeating_timer_t *rt);
+static float get_current_speed(int32_t current_count);
+static bool control_callback(repeating_timer_t *rt);
 
 int main(void) {
     setup();
 
+    multicore_launch_core1(main_core1);
+
+    main_core0();
+
+    return 0;
+}
+
+void main_core0(void) {
+    static uint32_t report;
+    static int32_t current_count;
+    static float current_speed;
+    static uint16_t raw;
+    static int16_t setpoint = 0;
+
     while (true) {
-        static int32_t current_count;
-        static float current_speed;
-        static uint16_t raw;
-
-        /* Take a single 12-bit sample */
-        raw = adc_read();
-
-        /* Convert raw value to voltage */
-        float voltage = raw * (ADC_VREF / ADC_RESOLUTION);
-
-        printf("Raw: %4u  |  Voltage: %.4f V\n", raw, voltage);
-
-        absolute_time_t now = get_absolute_time();
-        int64_t elapsed_us = absolute_time_diff_us(last_time, now);
-
-        printf("Control flag: %d\n", ctrl);
-
         if (ctrl) {
             ctrl = false;
+            // /* Take a single 12-bit sample */
+            // raw = adc_read();
+
+            // /* Convert raw value to voltage */
+            // float voltage = raw * (ADC_VREF / ADC_RESOLUTION);
+
+            // printf("Raw: %4u  |  Voltage: %.4f V\n", raw, voltage);
+
+            // Gets target speed from Core 1
+            while (multicore_fifo_rvalid()) {
+                uint32_t msg = multicore_fifo_pop_blocking();
+                setpoint     = (int16_t)msg;
+                motor_status = MOVING;
+            }
 
             quadrature_encoder_update();
             current_count = quadrature_encoder_get_count();
+
+            absolute_time_t now = get_absolute_time();
             current_speed = get_current_speed(current_count);
 
-            motor.MotorControl(SPEED_SETPOINT, current_speed);
+            motor.Control(setpoint, current_speed);
 
-            printf("Count: %ld | RPM: %.2f\n",
-                   current_count,
-                   std::fabs(current_speed));
-        }
-        sleep_ms(SAMPLE_DELAY_MS);
+            report = ((uint32_t)fabs(current_speed) << 16) | motor_status;
+            if (multicore_fifo_wready())
+                multicore_fifo_push_blocking(report);
+            }
+    }
+}
+
+void main_core1(void) {
+    w5500_init_spi();
+
+    if (!tcp_init()) {
+        printf("TCP init: FAILED\n");
+        while (true) tight_loop_contents();
     }
 
-    return 0;
+    if (!tcp_open()) {
+        printf("Open TCP: FAILED\n");
+        while (true) tight_loop_contents();
+    }
+
+    uint16_t actual_rpm   = 0;
+    status_t motor_status = IDLE;
+    uint8_t  pkt[8];
+
+    while (true) {
+        // Get status updates from Core 0
+        while (multicore_fifo_rvalid()) {
+            uint32_t msg = multicore_fifo_pop_blocking();
+            actual_rpm   = (uint16_t)(msg >> 16);
+            motor_status = (status_t)(msg & 0xFFFF);
+        }
+
+        // Check connection state
+        uint8_t sr = w5500_read_sock_byte(TCP_SOCKET, Sn_SR);
+
+        if (sr == SOCK_CLOSE_WAIT || sr == SOCK_CLOSED) {
+            // Client disconnected — re-arm listener
+            tcp_reconnect();
+            sleep_ms(10);
+            continue;
+        }
+
+        if (sr != SOCK_ESTABLISHED) {
+            // Still waiting for a client to connect — nothing to do
+            sleep_ms(5);
+            continue;
+        }
+
+        // Check how many bytes are available in RX buffer
+        uint8_t rsr[2];
+        w5500_dma_read(Sn_RX_RSR, BSB_SOCK_REG(TCP_SOCKET), rsr, 2);
+        uint16_t rx_size = ((uint16_t)rsr[0] << 8) | rsr[1];
+
+        // Wait until a full 8-byte command has arrived
+        if (rx_size < 8) {
+            sleep_ms(1);
+            continue;
+        }
+
+        // Read exactly 8 bytes
+        uint8_t rd_ptr[2];
+        w5500_dma_read(Sn_RX_RD, BSB_SOCK_REG(TCP_SOCKET), rd_ptr, 2);
+        uint16_t rx_rd = ((uint16_t)rd_ptr[0] << 8) | rd_ptr[1];
+
+        w5500_dma_read(rx_rd, BSB_SOCK_RX(TCP_SOCKET), pkt, 8);
+
+        rx_rd += 8;
+        uint8_t new_rd[2] = { rx_rd >> 8, rx_rd & 0xFF };
+        _w5500_write_blocking(Sn_RX_RD, BSB_SOCK_REG(TCP_SOCKET), new_rd, 2);
+        w5500_write_sock_byte(TCP_SOCKET, Sn_CR, Sn_CR_RECV);
+
+        // Process command
+        uint8_t  cmd        = pkt[0];
+        uint16_t target_rpm = ((uint16_t)pkt[2] << 8) | pkt[3];
+
+        if (cmd == 0x01) {
+            if (target_rpm > MAX_RPM) target_rpm = MAX_RPM;
+            multicore_fifo_push_blocking((uint32_t)target_rpm);
+            tcp_send_response(pkt, actual_rpm, MOVING);
+        } else if (cmd == 0x02) {
+            tcp_send_response(pkt, actual_rpm, motor_status);
+        }
+
+        sleep_ms(1);
+    }
 }
 
 void setup(void) {

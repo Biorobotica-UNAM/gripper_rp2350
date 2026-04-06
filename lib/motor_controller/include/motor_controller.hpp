@@ -12,9 +12,11 @@
 class MotorController {
 public:
 	MotorController(float k_p, float k_i, float k_d, uint8_t pwm_pin);
-	void MotorControl(float setpoint, float current_speed);
+	void Control(float setpoint, float current_speed);
 
 private:
+	float GenerateProfile(float setpoint);
+
 	float kp;
 	float ki;
 	float kd;
