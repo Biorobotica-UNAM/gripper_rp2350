@@ -3,7 +3,7 @@
 #include "pico/stdlib.h"
 #include "w5500.h"
 
-#define LOCAL_PORT  7777
+#define LOCAL_PORT 8888
 #define TCP_SOCKET 0
 
 typedef enum {
@@ -32,8 +32,8 @@ const uint8_t SUBNET[4]  = { 255, 255, 255, 0 };
 bool tcp_init(void);
 bool tcp_open(void);
 void tcp_reconnect(void);
-void tcp_send_response(uint8_t *pkt, uint16_t actual_rpm,
-                               status_t status);
+void tcp_send_response(uint8_t *pkt, uint16_t actual_rpm, 
+                        uint16_t actual_current, uint8_t status);
 
 #ifdef __cplusplus
 }

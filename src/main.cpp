@@ -71,6 +71,7 @@ void main_core0(void) {
     static uint16_t raw;
     static uint16_t current;
     static bool dir;
+    static bool update_cmd = false;
     static float setpoint = 0.0f;
     uint8_t cmd = STOP;
     status_t motor_status = IDLE;
@@ -80,16 +81,26 @@ void main_core0(void) {
         while (multicore_fifo_rvalid()) {
             uint32_t msg = multicore_fifo_pop_blocking();
             cmd          = (uint8_t)msg;
+            update_cmd   = true;
         }
 
-        if (cmd == STOP) {
+        if (cmd == STOP && update_cmd) {
+            update_cmd   = false;
+            printf("CMD RECEIVED: STOP\n");
             setpoint = 0.0f;
-        } else if (cmd == OPEN) {
+        } else if (cmd == OPEN && update_cmd) {
+            update_cmd   = false;
+            printf("CMD RECEIVED: OPEN\n");
             setpoint = SETPOINT;
             gpio_put(PH_MOTOR_PIN, true);
-        } else if (cmd == CLOSE) {
+        } else if (cmd == CLOSE && update_cmd) {
+            update_cmd   = false;
+            printf("CMD RECEIVED: CLOSE\n");
             setpoint = SETPOINT;
             gpio_put(PH_MOTOR_PIN, false);
+        } else if (cmd == QUERY_STATUS && update_cmd) {
+            update_cmd   = false ;
+            printf("CMD RECEIVED: QUERY_STATUS\n");
         }
 
         if (ctrl) {
@@ -129,6 +140,7 @@ void main_core0(void) {
 
 void main_core1(void) {
     w5500_init_spi();
+    sleep_ms(200);
 
     if (!tcp_init()) {
         printf("TCP init: FAILED\n");
@@ -197,7 +209,7 @@ void main_core1(void) {
         uint8_t  cmd        = pkt[0];
         if (!multicore_fifo_wready()) continue;
         multicore_fifo_push_blocking((uint32_t)cmd);
-        tcp_send_response(pkt, actual_rpm, motor_status);
+        tcp_send_response(pkt, actual_rpm, actual_current, motor_status);
 
         sleep_ms(1);
     }

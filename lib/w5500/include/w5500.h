@@ -106,31 +106,15 @@ extern "C" {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Flat TX buffer: [addr_hi][addr_lo][ctrl][payload...]
-extern uint8_t  _tx_buf[W5500_BUF_SIZE];
+extern uint32_t  _tx_buf[W5500_BUF_SIZE];
 
 // Real RX buffer used during read transactions (after the 3-byte header)
-extern uint8_t  _rx_buf[W5500_BUF_SIZE];
-
-// 1-byte scratch target for the RX DMA ring during write transactions.
-// The ring wrap size is 0 (2^0 = 1 byte) so the address never advances.
-extern uint8_t  _rx_scratch;
-
-// Completion flag set by DMA_IRQ_1 handler, polled by the caller.
-// volatile so the compiler never caches it in a register.
-extern volatile bool _spi_done;
+extern uint32_t  _rx_buf[W5500_BUF_SIZE];  // used by w5500_dma_read  — incrementing write
+extern uint32_t _rx_scratch;              // used by w5500_dma_write — fixed write, discard
 
 // Use runtime claim:
 extern int _dma_tx;
 extern int _dma_rx;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DMA_IRQ_1 handler — runs on Core 1
-//
-// Only the TX channel raises this interrupt (RX channel interrupt is not
-// enabled). By the time TX DMA finishes, the PIO has already clocked out and
-// clocked in every bit, so RX is guaranteed complete as well.
-// ─────────────────────────────────────────────────────────────────────────────
-void _w5500_dma_irq_handler(void);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal: block until the current DMA transfer completes.
@@ -224,6 +208,13 @@ void w5500_set_gateway(const uint8_t gw[4]);
 void w5500_set_subnet (const uint8_t sn[4]);
 void w5500_set_pc (const uint8_t pc_ip[4], const uint16_t port, 
                             const uint8_t sn, const uint8_t pc_mac[6]);
+
+uint8_t pio_spi_transfer_byte(uint8_t tx);
+uint8_t read_version_no_dma(void);
+
+// DEBUG
+uint8_t read_version_dma_debug(void);
+void debug_write_then_read(void);
 
 #ifdef __cplusplus
 }
