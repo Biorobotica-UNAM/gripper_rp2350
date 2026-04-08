@@ -18,10 +18,10 @@
 #define ADC_VREF        3.3f   
 
 #define FSR_CHANNEL     2u     
-#define FSR_GPIO_PIN    28u    
+#define FSR_GPIO_PIN    (26 + FSR_CHANNEL)   
 
 #define CS_CHANNEL      0u     
-#define CS_GPIO_PIN     26u    
+#define CS_GPIO_PIN     (26 + CS_CHANNEL)    
 
 #define EN_MOTOR_PIN    5u
 #define PH_MOTOR_PIN    6u
@@ -75,15 +75,18 @@ void main_core0(void) {
     static int32_t current_count;
     static float current_speed;
     static uint16_t raw;
-    static uint16_t current;
+    static float current;
     static bool dir;
     static bool update_cmd = false;
     static float setpoint = 0.0f;
     static uint8_t ch_sequence[2] = {0, 2};
-    static uint8_t idx = 1;
     static uint16_t adc_values[3];
     uint8_t cmd = STOP;
     status_t motor_status = IDLE;
+
+    adc_run(true);
+    adc_fifo_drain();
+    adc_select_input(CS_CHANNEL);
 
     while (true) {
         // Gets action from Core 1
@@ -93,22 +96,18 @@ void main_core0(void) {
             update_cmd   = true;
         }
 
-        if (!adc_fifo_is_empty()) {
+        if (!adc_fifo_is_empty() && adc_fifo_get_level() >= 2) {
             for(uint8_t i = 0; i < 2; i++) {
                 uint16_t raw = adc_fifo_get();
 
-                uint8_t ch = ch_sequence[idx];
-                adc_values[ch] = raw & 0x0FFF;
-
-                idx = (idx + 1) % 2;
+                uint8_t ch = ch_sequence[i];
+                bool adc_err = raw & 0x8000;
+                if (!adc_err) adc_values[ch] = raw & 0x0FFF;
             }
-        }
 
-        current = adc_values[0] * ADC_VREF / ADC_RESOLUTION;
-        std::cout << "\rRaw CH0: " << adc_values[0] << "\n" << std::flush;
-        std::cout << "\rRaw CH2: " << adc_values[2] << "\n" << std::flush;
-        std::cout << "\rCurrent: " << current << "\n" << std::flush;
-        // printf("CH2 VALUE: %u\n", adc_values[2]);
+            current = adc_values[0] * ADC_VREF / ADC_RESOLUTION;
+            printf("Current: %.2f\n", current);
+        }
 
         if ((cmd == STOP && update_cmd) || (adc_values[2] > FORCE_THR)) {
             update_cmd   = false;
@@ -258,21 +257,19 @@ void inst_adc_init(void) {
     adc_gpio_init(FSR_GPIO_PIN);
     adc_gpio_init(CS_GPIO_PIN);
 
-    adc_select_input(0);
+    adc_select_input(CS_CHANNEL);
 
-    adc_set_round_robin((1 << 0) | (1 << 2));
+    adc_set_round_robin((1 << CS_CHANNEL) | (1 << FSR_CHANNEL));
 
     adc_fifo_setup(
         true,
         false,
         1,
-        false,
+        true,
         false
     );
 
     adc_set_clkdiv(96000.0f);
-    adc_run(true);
-    printf("RR mask: 0x%X\n", adc_hw->cs & ADC_CS_RROBIN_BITS);
 }
 
 void digital_gpio_init(void) {

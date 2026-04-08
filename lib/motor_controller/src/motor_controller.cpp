@@ -33,8 +33,6 @@ void MotorController::Control(float setpoint, float current_speed) {
 						+ this->ki * (this->err[2] + this->err[1]) / 2.0f 
 						+ this->kd * (this->err[2] - 2 * this->err[1] + this->err[0]);
 
-		// printf("Control signal: %.2f\n", this->u[1]);
-
 		if (this->u[1] > 1.0f) {
 			this->u[1] = 1.0f;
 		} else if (this->u[1] < 0.0f) {
@@ -51,6 +49,7 @@ void MotorController::Control(float setpoint, float current_speed) {
 	}
 }
 
+// TODO
 float MotorController::GenerateProfile(float setpoint) {
 	static float speed = setpoint;
 	return speed;
