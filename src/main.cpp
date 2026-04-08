@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <cmath>
+#include <iostream>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "pico/time.h"
@@ -13,10 +14,14 @@
 #include "motor_controller.hpp"
 
 // --- Configuration ---
-#define ADC_CHANNEL     2u     
-#define ADC_GPIO_PIN    28u    
-#define ADC_VREF        3.3f   
 #define ADC_RESOLUTION  4096.0f
+#define ADC_VREF        3.3f   
+
+#define FSR_CHANNEL     2u     
+#define FSR_GPIO_PIN    28u    
+
+#define CS_CHANNEL      0u     
+#define CS_GPIO_PIN     26u    
 
 #define EN_MOTOR_PIN    5u
 #define PH_MOTOR_PIN    6u
@@ -33,14 +38,15 @@
 #define CONTROL_US      (1000000 / CONTROL_HZ)
 #define SETPOINT        150.0f
 
-#define CURRENT_THR     2.0f  // Volts
+#define CURRENT_THR     20.0f  // Volts
+#define FORCE_THR       1100  // Volts
 
 // --- Initialization ---
 static void main_core0(void);
 static void main_core1(void);
 
 static void setup(void);
-static void fsr_adc_init(void);
+static void inst_adc_init(void);
 static void digital_gpio_init();
 static void encoders_gpio_init(void);
 
@@ -73,6 +79,9 @@ void main_core0(void) {
     static bool dir;
     static bool update_cmd = false;
     static float setpoint = 0.0f;
+    static uint8_t ch_sequence[2] = {0, 2};
+    static uint8_t idx = 1;
+    static uint16_t adc_values[3];
     uint8_t cmd = STOP;
     status_t motor_status = IDLE;
 
@@ -84,34 +93,45 @@ void main_core0(void) {
             update_cmd   = true;
         }
 
-        if (cmd == STOP && update_cmd) {
+        if (!adc_fifo_is_empty()) {
+            for(uint8_t i = 0; i < 2; i++) {
+                uint16_t raw = adc_fifo_get();
+
+                uint8_t ch = ch_sequence[idx];
+                adc_values[ch] = raw & 0x0FFF;
+
+                idx = (idx + 1) % 2;
+            }
+        }
+
+        current = adc_values[0] * ADC_VREF / ADC_RESOLUTION;
+        std::cout << "\rRaw CH0: " << adc_values[0] << "\n" << std::flush;
+        std::cout << "\rRaw CH2: " << adc_values[2] << "\n" << std::flush;
+        std::cout << "\rCurrent: " << current << "\n" << std::flush;
+        // printf("CH2 VALUE: %u\n", adc_values[2]);
+
+        if ((cmd == STOP && update_cmd) || (adc_values[2] > FORCE_THR)) {
             update_cmd   = false;
-            printf("CMD RECEIVED: STOP\n");
+            printf("CH2 VALUE: %u\n", adc_values[2]);
+            printf("STOP\n");
             setpoint = 0.0f;
         } else if (cmd == OPEN && update_cmd) {
             update_cmd   = false;
-            printf("CMD RECEIVED: OPEN\n");
+            printf("OPEN\n");
             setpoint = SETPOINT;
             gpio_put(PH_MOTOR_PIN, true);
         } else if (cmd == CLOSE && update_cmd) {
             update_cmd   = false;
-            printf("CMD RECEIVED: CLOSE\n");
+            printf("CLOSE\n");
             setpoint = SETPOINT;
             gpio_put(PH_MOTOR_PIN, false);
         } else if (cmd == QUERY_STATUS && update_cmd) {
             update_cmd   = false ;
-            printf("CMD RECEIVED: QUERY_STATUS\n");
+            printf("QUERY_STATUS\n");
         }
 
         if (ctrl) {
             ctrl = false;
-            // /* Take a single 12-bit sample */
-            // raw = adc_read();
-
-            // /* Convert raw value to voltage */
-            // float voltage = raw * (ADC_VREF / ADC_RESOLUTION);
-
-            // printf("Raw: %4u  |  Voltage: %.4f V\n", raw, voltage);
 
             quadrature_encoder_update();
             current_count = quadrature_encoder_get_count();
@@ -124,7 +144,9 @@ void main_core0(void) {
             if (fabs(current_speed) > 0 && current < CURRENT_THR) {
                 motor_status = MOVING;
             } else if (current > CURRENT_THR) {
-                motor_status = STALLED;    
+                motor_status = STALLED; 
+            } else if (adc_values[2] > FORCE_THR) {
+                motor_status = REACHED;   
             } else if (fabs(current_speed) == 0 && current < CURRENT_THR) {
                 motor_status = IDLE;
             }
@@ -223,21 +245,34 @@ void setup(void) {
 
     add_repeating_timer_us(-CONTROL_US, control_callback, NULL, &timer);
 
-    fsr_adc_init();
+    inst_adc_init();
     digital_gpio_init();
     quadrature_encoder_init(pio0, 0, ENCODER_CH_A, ENCODER_CH_B, 1.0f);
 
     printf("XIAO RP2350 correctly configured!\n");
 }
 
-void fsr_adc_init(void) {
+void inst_adc_init(void) {
     adc_init();
 
-    #if ADC_CHANNEL < 4
-        adc_gpio_init(ADC_GPIO_PIN);
-    #endif
+    adc_gpio_init(FSR_GPIO_PIN);
+    adc_gpio_init(CS_GPIO_PIN);
 
-    adc_select_input(ADC_CHANNEL);          // Select the active channel
+    adc_select_input(0);
+
+    adc_set_round_robin((1 << 0) | (1 << 2));
+
+    adc_fifo_setup(
+        true,
+        false,
+        1,
+        false,
+        false
+    );
+
+    adc_set_clkdiv(96000.0f);
+    adc_run(true);
+    printf("RR mask: 0x%X\n", adc_hw->cs & ADC_CS_RROBIN_BITS);
 }
 
 void digital_gpio_init(void) {
