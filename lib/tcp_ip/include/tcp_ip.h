@@ -7,10 +7,11 @@
 #define TCP_SOCKET 0
 
 typedef enum {
-    MOVING  = 0x01,
-    REACHED = 0x02,
-    IDLE    = 0x03,
-    STALLED = 0x04
+    OPENING  = 0x01,
+    CLOSING  = 0x02,
+    REACHED  = 0x03,
+    IDLE     = 0x04,
+    STALLED  = 0x05
 } status_t;
 
 enum {
@@ -19,6 +20,12 @@ enum {
     STOP         = 0x03,
     QUERY_STATUS = 0x04
 };
+
+typedef struct {
+    uint16_t rpm;
+    uint16_t current;
+    status_t status;
+} motor_report_t;
 
 #ifdef __cplusplus
 extern "C" {
