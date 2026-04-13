@@ -7,6 +7,7 @@
 #define TCP_SOCKET 0
 
 typedef enum {
+    INIT     = 0x00,
     OPENING  = 0x01,
     CLOSING  = 0x02,
     REACHED  = 0x03,

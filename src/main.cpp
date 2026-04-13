@@ -46,6 +46,7 @@
 #define CPR             48u
 #define GEAR_RATIO      26u
 #define OUTPUT_CPR      (CPR * GEAR_RATIO)
+#define OPEN_COUNT      (5 * CPR * GEAR_RATIO)
 
 #define K_P             0.1f
 #define K_I             0.02f
@@ -82,6 +83,7 @@ static absolute_time_t last_time = get_absolute_time();
 
 static float get_current_speed(int32_t current_count);
 static bool control_callback(repeating_timer_t *rt);
+static inline bool contact_detected(uint16_t *adc);
 
 int main(void) {
     setup();
@@ -104,7 +106,7 @@ void main_core0(void) {
     static float setpoint = 0.0f;
     static uint16_t adc_values[3];
     uint8_t cmd = STOP;
-    status_t motor_status = IDLE;
+    status_t motor_status = INIT;
 
     adc_run(true);
     adc_fifo_drain();
@@ -124,36 +126,52 @@ void main_core0(void) {
                 bool adc_err = raw & 0x8000;
                 if (!adc_err) adc_values[i] = raw & 0x0FFF;
             }
-
-            // Drain any extra samples to avoid misalignment on next read
-            while (!adc_fifo_is_empty()) adc_fifo_get();
+            adc_fifo_drain();
 
             // 1.13 [V/A] (Check DRV8874 datasheet)
             current = 0.885 * adc_values[CS_CHANNEL] * ADC_VREF / ADC_RESOLUTION;
             // printf("FSR0: %u | FSR1: %u | Current: %.2f\n", adc_values[FSR0_CHANNEL], adc_values[FSR1_CHANNEL], current);
-            printf("Current: %.2f [A]\n", current);
+            // printf("Current: %.2f [A]\n", current);
         }
 
         switch (motor_status) {
-            case IDLE: 
-                switch (cmd) {
-                    case OPEN:
-                        setpoint = SETPOINT;
-                        gpio_put(PH_MOTOR_PIN, true);
-                        printf("Command received: OPEN\n");
-                        motor_status = OPENING;
-                        break;
-                    case CLOSE:
-                        setpoint = SETPOINT;
-                        gpio_put(PH_MOTOR_PIN, false);
-                        printf("Command received: CLOSE\n");
-                        motor_status = CLOSING;
-                        break;
+            case INIT:
+                printf("SM_STATE: INIT\n");
+
+                setpoint = SETPOINT;
+                gpio_put(PH_MOTOR_PIN, false);
+
+                if (contact_detected(adc_values)) {
+                    quadrature_encoder_clean_count();
+                    motor_status = OPENING;
                 }
                 break;
 
             case OPENING:
+                printf("SM_STATE: OPENING\n");
+                
+                setpoint = SETPOINT;
+                gpio_put(PH_MOTOR_PIN, true);
+
                 // Force stop conditions
+                quadrature_encoder_update();
+                printf("Opening count: %d\n", quadrature_encoder_get_count());
+
+                if (quadrature_encoder_get_count() >= (int)OPEN_COUNT) {
+                    setpoint = 0.0f;
+
+                    mutex_enter_blocking(&report_mutex);
+                    shared_report.rpm     = 0;
+                    shared_report.current = (uint16_t)current;
+                    shared_report.status  = IDLE;
+                    mutex_exit(&report_mutex);
+
+                    sem_release(&report_sem);
+
+                    motor_status = IDLE;
+                    break;
+                }
+
                 if (cmd == STOP) {
                     setpoint     = 0.0f;
 
@@ -179,6 +197,11 @@ void main_core0(void) {
                 break;
 
             case CLOSING:
+                printf("SM_STATE: CLOSING\n");
+                
+                setpoint = SETPOINT;
+                gpio_put(PH_MOTOR_PIN, false);
+
                 // Force stop conditions
                 if (cmd == STOP) {
                     setpoint     = 0.0f;
@@ -203,38 +226,35 @@ void main_core0(void) {
                 //     motor_status = IDLE;
                 // }
 
-                if (adc_values[FSR0_CHANNEL] + adc_values[FSR1_CHANNEL] / 2 > FORCE_THR) {
-                    motor_status = REACHED;
+                if (contact_detected(adc_values)) {
+                    setpoint     = 0.0f;
+
+                    mutex_enter_blocking(&report_mutex);
+                    shared_report.rpm     = 0;
+                    shared_report.current = (uint16_t)current;
+                    shared_report.status  = REACHED;
+                    mutex_exit(&report_mutex);
+
+                    sem_release(&report_sem);
+
+                    motor_status = IDLE;
                 }
 
                 break;
 
-            case STALLED:
-                setpoint     = 0.0f;
-
-                mutex_enter_blocking(&report_mutex);
-                shared_report.rpm     = 0;
-                shared_report.current = (uint16_t)current;
-                shared_report.status  = STALLED;
-                mutex_exit(&report_mutex);
-
-                sem_release(&report_sem);
-
-                motor_status = IDLE;
-                break;
-
-            case REACHED:
-                setpoint = 0.0f;
-
-                mutex_enter_blocking(&report_mutex);
-                shared_report.rpm     = (uint16_t)fabs(current_speed);
-                shared_report.current = (uint16_t)current;
-                shared_report.status  = motor_status;
-                mutex_exit(&report_mutex);
-
-                sem_release(&report_sem);       // unblocks Core 1
-
-                motor_status = IDLE;
+            case IDLE: 
+                printf("SM_STATE: IDLE\n");
+                
+                switch (cmd) {
+                    case OPEN:
+                        printf("Command received: OPEN\n");
+                        motor_status = OPENING;
+                        break;
+                    case CLOSE:
+                        printf("Command received: CLOSE\n");
+                        motor_status = CLOSING;
+                        break;
+                }
                 break;
         }
 
@@ -246,6 +266,8 @@ void main_core0(void) {
 
             absolute_time_t now = get_absolute_time();
             current_speed = get_current_speed(current_count);
+
+            printf("Current count: %d\n", current_count);
 
             motor.Control(setpoint, current_speed);
         }
@@ -323,6 +345,9 @@ void main_core1(void) {
 
         uint8_t  cmd        = pkt[0];
         if (!multicore_fifo_wready()) continue;
+
+        while (sem_try_acquire(&report_sem));
+
         multicore_fifo_push_blocking((uint32_t)cmd);
 
         if (cmd == OPEN || cmd == CLOSE || cmd == STOP) {
@@ -410,4 +435,8 @@ bool control_callback(repeating_timer_t *rt) {
 void sync_init(void) {
     mutex_init(&report_mutex);
     sem_init(&report_sem, 0, 1);   // starts at 0 (not ready), max 1
+}
+
+bool contact_detected(uint16_t *adc) {
+    return (adc[FSR0_CHANNEL] + adc[FSR1_CHANNEL]) / 2 > FORCE_THR;
 }

@@ -138,6 +138,10 @@ int32_t quadrature_encoder_get_count(void) {
     return s_count;
 }
 
+void quadrature_encoder_clean_count(void) {
+    s_count = 0;
+}
+
 void quadrature_encoder_debug(void) {
     uint32_t write_addr = dma_channel_hw_addr(s_dma_chan)->write_addr;
     uint32_t buf_base   = (uint32_t)s_dma_buf;
