@@ -43,10 +43,10 @@
 // #define ENCODER_CH_A    27u
 // #define ENCODER_CH_B    7u
 
-#define CPR             48u
-#define GEAR_RATIO      26u
+#define CPR             48
+#define GEAR_RATIO      26
 #define OUTPUT_CPR      (CPR * GEAR_RATIO)
-#define OPEN_COUNT      (5 * CPR * GEAR_RATIO)
+#define OPEN_COUNT      (-4 * CPR * GEAR_RATIO)
 
 #define K_P             0.1f
 #define K_I             0.02f
@@ -102,7 +102,8 @@ void main_core0(void) {
     static uint16_t raw;
     static uint16_t force;
     static float current;
-    static bool dir;
+    static bool open_dir = false;
+    static bool close_dir = true;
     static float setpoint = 0.0f;
     static uint16_t adc_values[3];
     uint8_t cmd = STOP;
@@ -139,7 +140,7 @@ void main_core0(void) {
                 printf("SM_STATE: INIT\n");
 
                 setpoint = SETPOINT;
-                gpio_put(PH_MOTOR_PIN, false);
+                gpio_put(PH_MOTOR_PIN, close_dir);
 
                 if (contact_detected(adc_values)) {
                     quadrature_encoder_clean_count();
@@ -151,13 +152,13 @@ void main_core0(void) {
                 printf("SM_STATE: OPENING\n");
                 
                 setpoint = SETPOINT;
-                gpio_put(PH_MOTOR_PIN, true);
+                gpio_put(PH_MOTOR_PIN, open_dir);
 
                 // Force stop conditions
                 quadrature_encoder_update();
                 printf("Opening count: %d\n", quadrature_encoder_get_count());
 
-                if (quadrature_encoder_get_count() >= (int)OPEN_COUNT) {
+                if (quadrature_encoder_get_count() <= (int)OPEN_COUNT) {
                     setpoint = 0.0f;
 
                     mutex_enter_blocking(&report_mutex);
@@ -200,7 +201,7 @@ void main_core0(void) {
                 printf("SM_STATE: CLOSING\n");
                 
                 setpoint = SETPOINT;
-                gpio_put(PH_MOTOR_PIN, false);
+                gpio_put(PH_MOTOR_PIN, close_dir);
 
                 // Force stop conditions
                 if (cmd == STOP) {
