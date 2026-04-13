@@ -24,7 +24,7 @@ static const int8_t QEM[16] = {
 // DMA ring buffer — DMA writes here continuously (ping-pong via RING)
 // Aligned to its own size so the DMA address-wrap works correctly
 // ---------------------------------------------------------------------------
-static uint32_t  s_dma_buf[QE_DMA_BUFFER_SIZE] __attribute__((aligned(QE_DMA_BUFFER_SIZE * sizeof(uint32_t))));
+static volatile uint32_t  s_dma_buf[QE_DMA_BUFFER_SIZE] __attribute__((aligned(QE_DMA_BUFFER_SIZE * sizeof(uint32_t))));
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -155,9 +155,9 @@ void quadrature_encoder_debug(void) {
     printf("[DBG] PIO RX FIFO level=%u\n", pio_sm_get_rx_fifo_level(s_pio, s_sm));
 
     // 3. What are the raw GPIO levels right now?
-    bool a = gpio_get(27);   // your gpio_a
-    bool b = gpio_get(7);    // your gpio_b
-    printf("[DBG] GPIO27(A)=%d  GPIO7(B)=%d\n", a, b);
+    bool a = gpio_get(5);   // your gpio_a
+    bool b = gpio_get(6);    // your gpio_b
+    printf("[DBG] GPIO5(A)=%d  GPIO6(B)=%d\n", a, b);
 
     // 4. Dump first 4 DMA buffer entries
     for (int i = 0; i < 4; i++) {

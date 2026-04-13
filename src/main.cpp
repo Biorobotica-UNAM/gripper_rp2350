@@ -47,6 +47,7 @@
 #define GEAR_RATIO      26
 #define OUTPUT_CPR      (CPR * GEAR_RATIO)
 #define OPEN_COUNT      (-4 * CPR * GEAR_RATIO)
+#define STOP_TIME_MS    1000
 
 #define K_P             0.1f
 #define K_I             0.02f
@@ -77,12 +78,16 @@ void sync_init(void);
 // --- Motor Control ---
 repeating_timer_t timer;
 volatile bool ctrl = false;
+volatile bool stop = false;
+bool stop_timer_armed = false;
+alarm_id_t stop_alarm_id;
 int32_t last_count = 0;
 MotorController motor(K_P, K_I, K_D, EN_MOTOR_PIN);
 static absolute_time_t last_time = get_absolute_time();
 
 static float get_current_speed(int32_t current_count);
 static bool control_callback(repeating_timer_t *rt);
+static int64_t stop_cb(alarm_id_t id, void *user_data);
 static inline bool contact_detected(uint16_t *adc);
 
 int main(void) {
@@ -104,9 +109,10 @@ void main_core0(void) {
     static float current;
     static bool open_dir = false;
     static bool close_dir = true;
+    static bool init_entry = true;
     static float setpoint = 0.0f;
     static uint16_t adc_values[3];
-    uint8_t cmd = STOP;
+    uint8_t cmd = 0;
     status_t motor_status = INIT;
 
     adc_run(true);
@@ -131,25 +137,36 @@ void main_core0(void) {
 
             // 1.13 [V/A] (Check DRV8874 datasheet)
             current = 0.885 * adc_values[CS_CHANNEL] * ADC_VREF / ADC_RESOLUTION;
-            // printf("FSR0: %u | FSR1: %u | Current: %.2f\n", adc_values[FSR0_CHANNEL], adc_values[FSR1_CHANNEL], current);
+            printf("FSR0: %u | FSR1: %u | Current: %.2f\n", adc_values[FSR0_CHANNEL], adc_values[FSR1_CHANNEL], current);
             // printf("Current: %.2f [A]\n", current);
         }
 
         switch (motor_status) {
             case INIT:
-                printf("SM_STATE: INIT\n");
+                // printf("SM_STATE: INIT\n");
 
                 setpoint = SETPOINT;
                 gpio_put(PH_MOTOR_PIN, close_dir);
 
-                if (contact_detected(adc_values)) {
+                if (init_entry) {
+                    if (stop_timer_armed) {
+                        cancel_alarm(stop_alarm_id);
+                    }
+
+                    stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
+                    stop_timer_armed = true;
+                    init_entry = false;
+                }
+
+                if (contact_detected(adc_values) || stop) {
+                    stop = false;
                     quadrature_encoder_clean_count();
                     motor_status = OPENING;
                 }
                 break;
 
             case OPENING:
-                printf("SM_STATE: OPENING\n");
+                // printf("SM_STATE: OPENING\n");
                 
                 setpoint = SETPOINT;
                 gpio_put(PH_MOTOR_PIN, open_dir);
@@ -159,6 +176,20 @@ void main_core0(void) {
                 printf("Opening count: %d\n", quadrature_encoder_get_count());
 
                 if (quadrature_encoder_get_count() <= (int)OPEN_COUNT) {
+                    setpoint = 0.0f;
+
+                    mutex_enter_blocking(&report_mutex);
+                    shared_report.rpm     = 0;
+                    shared_report.current = (uint16_t)current;
+                    shared_report.status  = IDLE;
+                    mutex_exit(&report_mutex);
+
+                    sem_release(&report_sem);
+
+                    motor_status = IDLE;
+                    break;
+                } else if (stop) {
+                    stop = false;
                     setpoint = 0.0f;
 
                     mutex_enter_blocking(&report_mutex);
@@ -198,7 +229,7 @@ void main_core0(void) {
                 break;
 
             case CLOSING:
-                printf("SM_STATE: CLOSING\n");
+                // printf("SM_STATE: CLOSING\n");
                 
                 setpoint = SETPOINT;
                 gpio_put(PH_MOTOR_PIN, close_dir);
@@ -239,20 +270,55 @@ void main_core0(void) {
                     sem_release(&report_sem);
 
                     motor_status = IDLE;
+                } else if (stop) {
+                    stop = false;
+                    setpoint = 0.0f;
+
+                    mutex_enter_blocking(&report_mutex);
+                    shared_report.rpm     = 0;
+                    shared_report.current = (uint16_t)current;
+                    shared_report.status  = IDLE;
+                    mutex_exit(&report_mutex);
+
+                    sem_release(&report_sem);
+
+                    motor_status = IDLE;
+                    break;
                 }
 
                 break;
 
             case IDLE: 
-                printf("SM_STATE: IDLE\n");
+                // printf("SM_STATE: IDLE\n");
                 
                 switch (cmd) {
                     case OPEN:
                         printf("Command received: OPEN\n");
+
+                        stop = false;
+
+                        if (stop_timer_armed) {
+                            cancel_alarm(stop_alarm_id);
+                        }
+
+                        stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
+                        stop_timer_armed = true;
+
                         motor_status = OPENING;
                         break;
+
                     case CLOSE:
                         printf("Command received: CLOSE\n");
+
+                        stop = false;
+
+                        if (stop_timer_armed) {
+                            cancel_alarm(stop_alarm_id);
+                        }
+
+                        stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
+                        stop_timer_armed = true;
+
                         motor_status = CLOSING;
                         break;
                 }
@@ -268,7 +334,7 @@ void main_core0(void) {
             absolute_time_t now = get_absolute_time();
             current_speed = get_current_speed(current_count);
 
-            printf("Current count: %d\n", current_count);
+            // printf("Current count: %d\n", current_count);
 
             motor.Control(setpoint, current_speed);
         }
@@ -431,6 +497,11 @@ float get_current_speed(int32_t current_count) {
 bool control_callback(repeating_timer_t *rt) {
     ctrl = true;
     return ctrl;
+}
+
+int64_t stop_cb(alarm_id_t id, void *user_data) {
+    stop = true;
+    return 0;
 }
 
 void sync_init(void) {
