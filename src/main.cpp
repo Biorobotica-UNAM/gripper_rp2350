@@ -46,8 +46,8 @@
 #define CPR             48
 #define GEAR_RATIO      26
 #define OUTPUT_CPR      (CPR * GEAR_RATIO)
-#define OPEN_COUNT      (-4 * CPR * GEAR_RATIO)
-#define STOP_TIME_MS    1000
+#define OPEN_COUNT      (4 * CPR * GEAR_RATIO)
+#define STOP_TIME_MS    2000
 
 #define K_P             0.1f
 #define K_I             0.02f
@@ -107,8 +107,8 @@ void main_core0(void) {
     static uint16_t raw;
     static uint16_t force;
     static float current;
-    static bool open_dir = false;
-    static bool close_dir = true;
+    static bool open_dir = true;
+    static bool close_dir = false;
     static bool init_entry = true;
     static float setpoint = 0.0f;
     static uint16_t adc_values[3];
@@ -160,6 +160,8 @@ void main_core0(void) {
 
                 if (contact_detected(adc_values) || stop) {
                     stop = false;
+                    stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
+                    stop_timer_armed = true;
                     quadrature_encoder_clean_count();
                     motor_status = OPENING;
                 }
@@ -175,7 +177,7 @@ void main_core0(void) {
                 quadrature_encoder_update();
                 printf("Opening count: %d\n", quadrature_encoder_get_count());
 
-                if (quadrature_encoder_get_count() <= (int)OPEN_COUNT) {
+                if (quadrature_encoder_get_count() >= (int)OPEN_COUNT) {
                     setpoint = 0.0f;
 
                     mutex_enter_blocking(&report_mutex);
