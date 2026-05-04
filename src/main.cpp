@@ -25,10 +25,6 @@
 #define FSR1_CHANNEL    1u                      // LEFT FINGER
 #define FSR1_GPIO_PIN   (26 + FSR1_CHANNEL)
 
-// --- TEST IN PROTO ---
-// #define CS_CHANNEL      1u
-// #define CS_GPIO_PIN     (26 + CS_CHANNEL)
-
 #define CS_CHANNEL      2u
 #define CS_GPIO_PIN     (26 + CS_CHANNEL)
 
@@ -36,12 +32,6 @@
 #define PH_MOTOR_PIN    7u
 #define ENCODER_CH_A    5u
 #define ENCODER_CH_B    6u
-
-// --- TEST IN PROTO ---
-// #define EN_MOTOR_PIN    5u
-// #define PH_MOTOR_PIN    6u
-// #define ENCODER_CH_A    27u
-// #define ENCODER_CH_B    7u
 
 #define CPR             48
 #define GEAR_RATIO      26
