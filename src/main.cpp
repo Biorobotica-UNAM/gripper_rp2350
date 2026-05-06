@@ -100,6 +100,7 @@ void main_core0(void) {
     static bool open_dir = true;
     static bool close_dir = false;
     static bool init_entry = true;
+    static bool close = false;     // OPEN: false, CLOSE: true
     static float setpoint = 0.0f;
     static uint16_t adc_values[3];
     uint8_t cmd = 0;
@@ -127,7 +128,7 @@ void main_core0(void) {
 
             // 1.13 [V/A] (Check DRV8874 datasheet)
             current = 0.885 * adc_values[CS_CHANNEL] * ADC_VREF / ADC_RESOLUTION;
-            printf("FSR0: %u | FSR1: %u | Current: %.2f\n", adc_values[FSR0_CHANNEL], adc_values[FSR1_CHANNEL], current);
+            // printf("FSR0: %u | FSR1: %u | Current: %.2f\n", adc_values[FSR0_CHANNEL], adc_values[FSR1_CHANNEL], current);
             // printf("Current: %.2f [A]\n", current);
         }
 
@@ -153,6 +154,7 @@ void main_core0(void) {
                     stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
                     stop_timer_armed = true;
                     quadrature_encoder_clean_count();
+                    close = true;
                     motor_status = OPENING;
                 }
                 break;
@@ -167,6 +169,7 @@ void main_core0(void) {
                 quadrature_encoder_update();
                 printf("Opening count: %d\n", quadrature_encoder_get_count());
 
+                // Open conditions
                 if (quadrature_encoder_get_count() >= (int)OPEN_COUNT) {
                     setpoint = 0.0f;
 
@@ -178,6 +181,7 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
+                    close = false;
                     motor_status = IDLE;
                     break;
                 } else if (stop) {
@@ -192,10 +196,12 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
+                    close = false;
                     motor_status = IDLE;
                     break;
                 }
 
+                // Force stop command
                 if (cmd == STOP) {
                     setpoint     = 0.0f;
 
@@ -207,6 +213,7 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
+                    close = false;
                     motor_status = IDLE;
                     break;
                 }
@@ -226,7 +233,7 @@ void main_core0(void) {
                 setpoint = SETPOINT;
                 gpio_put(PH_MOTOR_PIN, close_dir);
 
-                // Force stop conditions
+                // Force stop command
                 if (cmd == STOP) {
                     setpoint     = 0.0f;
 
@@ -238,6 +245,7 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
+                    close = true;
                     motor_status = IDLE;
                     break;
                 }
@@ -250,9 +258,12 @@ void main_core0(void) {
                 //     motor_status = IDLE;
                 // }
 
+                // Close conditions
                 if (contact_detected(adc_values)) {
                     setpoint     = 0.0f;
 
+                    printf("Contact detected. FSR0: %ld || FSR1: %ld\n", adc_values[FSR0_CHANNEL], adc_values[FSR1_CHANNEL]);
+                    
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
                     shared_report.current = (uint16_t)current;
@@ -261,6 +272,7 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
+                    close = true;
                     motor_status = IDLE;
                 } else if (stop) {
                     stop = false;
@@ -274,6 +286,7 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
+                    close = true;
                     motor_status = IDLE;
                     break;
                 }
@@ -289,6 +302,18 @@ void main_core0(void) {
 
                         stop = false;
 
+                        if (close) motor_status = OPENING;
+                        else {
+                            mutex_enter_blocking(&report_mutex);
+                            shared_report.rpm     = 0;
+                            shared_report.current = (uint16_t)current;
+                            shared_report.status  = IDLE;
+                            mutex_exit(&report_mutex);
+
+                            sem_release(&report_sem);
+                            break;
+                        }
+
                         if (stop_timer_armed) {
                             cancel_alarm(stop_alarm_id);
                         }
@@ -296,7 +321,6 @@ void main_core0(void) {
                         stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
                         stop_timer_armed = true;
 
-                        motor_status = OPENING;
                         break;
 
                     case CLOSE:
@@ -304,6 +328,19 @@ void main_core0(void) {
 
                         stop = false;
 
+                        if (!close) motor_status = CLOSING;
+                        else {
+                            mutex_enter_blocking(&report_mutex);
+                            shared_report.rpm     = 0;
+                            shared_report.current = (uint16_t)current;
+                            shared_report.status  = IDLE;
+                            mutex_exit(&report_mutex);
+
+                            sem_release(&report_sem);
+                            
+                            break;
+                        }
+
                         if (stop_timer_armed) {
                             cancel_alarm(stop_alarm_id);
                         }
@@ -311,7 +348,6 @@ void main_core0(void) {
                         stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
                         stop_timer_armed = true;
 
-                        motor_status = CLOSING;
                         break;
                 }
                 break;
