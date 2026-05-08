@@ -7,10 +7,12 @@
 #define TCP_SOCKET 0
 
 typedef enum {
-    MOVING  = 0x01,
-    REACHED = 0x02,
-    IDLE    = 0x03,
-    STALLED = 0x04
+    INIT     = 0x00,
+    OPENING  = 0x01,
+    CLOSING  = 0x02,
+    REACHED  = 0x03,
+    IDLE     = 0x04,
+    STALLED  = 0x05
 } status_t;
 
 enum {
@@ -20,13 +22,19 @@ enum {
     QUERY_STATUS = 0x04
 };
 
+typedef struct {
+    uint16_t rpm;
+    uint16_t current;
+    status_t status;
+} motor_report_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 const uint8_t MY_MAC[6]  = { 0x00, 0x08, 0xDC, 0x12, 0x34, 0x56 };
-const uint8_t MY_IP[4]   = { 192, 168, 50, 2 };
-const uint8_t GATEWAY[4] = { 192, 168, 50, 1 };
+const uint8_t MY_IP[4]   = { 172, 27, 1, 120 };
+const uint8_t GATEWAY[4] = { 172, 27, 1, 1 };
 const uint8_t SUBNET[4]  = { 255, 255, 255, 0 };
 
 bool tcp_init(void);
