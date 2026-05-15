@@ -40,8 +40,10 @@ const uint8_t SUBNET[4]  = { 255, 255, 255, 0 };
 bool tcp_init(void);
 bool tcp_open(void);
 void tcp_reconnect(void);
+bool tcp_send_packet(uint8_t *data, uint16_t len);
 void tcp_send_response(uint8_t *pkt, uint16_t actual_rpm, 
                         uint16_t actual_current, uint8_t status);
+int16_t tcp_recv_packet(uint8_t *buf, uint16_t buf_size);
 
 #ifdef __cplusplus
 }
