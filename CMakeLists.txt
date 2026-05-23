@@ -46,7 +46,8 @@ target_link_libraries(gripper
     quadrature_encoder
     motor_controller
     w5500
-    tcp_ip
+    tcp_transport
+    protocol
 )
 
 # stdio transport

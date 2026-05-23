@@ -372,9 +372,14 @@ void main_core0(void) {
 }
 
 void main_core1(void) {
-    uint16_t actual_rpm     = 0;
-    uint16_t actual_current = 0;
-    status_t motor_status   = IDLE;
+    motor_report_t res = {
+        .rpm     = 0,
+        .current = 0,
+        .pos_cnt = 0,
+        .status  = IDLE
+    };
+
+    // TODO: Eliminar por completo los pkt (Sobre todo de main !!)
     uint8_t  pkt[8];
 
     w5500_init_spi();
@@ -386,20 +391,22 @@ void main_core1(void) {
     }
 
     if (!tcp_open()) {
-        printf("Open TCP: FAILED\n");
+        printf("Create socket: FAILED\n");
         while (true) tight_loop_contents();
     }
 
     while (true) {
         // Get status updates from Core 0
+        // TODO: No debe haber operaciones binarias en main (No es legible !!)
         while (multicore_fifo_rvalid()) {
             uint32_t msg   = multicore_fifo_pop_blocking();
-            actual_rpm     = (uint16_t)(msg >> 20 & 0x0FFF);
-            actual_current = (uint16_t)(msg >> 8 & 0x0FFF);
-            motor_status   = (status_t)(msg & 0x00FF);
+            res.rpm     = (uint16_t)(msg >> 20 & 0x0FFF);
+            res.current = (uint16_t)(msg >> 8 & 0x0FFF);
+            res.status   = (status_t)(msg & 0x00FF);
         }
 
         // Check connection state
+        // Crear función (Se estan combinando capas !!)
         uint8_t sr = w5500_read_sock_byte(TCP_SOCKET, Sn_SR);
 
         if (sr == SOCK_CLOSE_WAIT || sr == SOCK_CLOSED) {
@@ -416,6 +423,7 @@ void main_core1(void) {
         }
 
         // Check how many bytes are available in RX buffer
+        // TODO: All these are driver's functions. Delete from application layer !!
         uint8_t rsr[2];
         w5500_dma_read(Sn_RX_RSR, BSB_SOCK_REG(TCP_SOCKET), rsr, 2);
         uint16_t rx_size = ((uint16_t)rsr[0] << 8) | rsr[1];
@@ -438,6 +446,7 @@ void main_core1(void) {
         _w5500_write_blocking(Sn_RX_RD, BSB_SOCK_REG(TCP_SOCKET), new_rd, 2);
         w5500_write_sock_byte(TCP_SOCKET, Sn_CR, Sn_CR_RECV);
 
+        // TODO: Delete pkt
         uint8_t  cmd        = pkt[0];
         if (!multicore_fifo_wready()) continue;
 
@@ -449,13 +458,15 @@ void main_core1(void) {
             sem_acquire_blocking(&report_sem);   // blocks here until Core 0 signals
 
             mutex_enter_blocking(&report_mutex);
-            actual_rpm     = shared_report.rpm;
-            actual_current = shared_report.current;
-            motor_status   = shared_report.status;
+            res.rpm     = shared_report.rpm;
+            res.current = shared_report.current;
+            res.pos_cnt = shared_report.pos_cnt;
+            res.status  = shared_report.status;
             mutex_exit(&report_mutex);
         }
 
-        tcp_send_response(pkt, actual_rpm, actual_current, motor_status);
+        // TODO: Delete pkt !!
+        tcp_send_response(pkt, res);
 
         cmd = 0;
     }

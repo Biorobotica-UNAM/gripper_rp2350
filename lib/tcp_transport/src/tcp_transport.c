@@ -98,8 +98,7 @@ bool tcp_send_packet(uint8_t *data, uint16_t len) {
     return false;
 }
 
-void tcp_send_response(uint8_t *pkt, uint16_t actual_rpm, 
-                        uint16_t actual_current, uint8_t status) {
+void tcp_send_response(uint8_t *pkt, motor_report_t res) {
     pkt[4] = status;
     pkt[5] = (actual_rpm >> 4) & 0xFF;
     pkt[6] = (actual_rpm & 0x0F) | ((actual_current >> 8) & 0x0F);
