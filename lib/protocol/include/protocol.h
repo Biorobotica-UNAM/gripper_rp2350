@@ -7,6 +7,7 @@
 extern "C" {
 #endif
 
+bool is_connected(void);
 void send_response(motor_report_t res);
 
 #ifdef __cplusplus

@@ -1,4 +1,5 @@
 #include "w5500.h"
+#include "w5500_config.h"
 
 uint32_t  _tx_buf[W5500_BUF_SIZE];
 uint32_t  _rx_buf[W5500_BUF_SIZE];  // used by w5500_dma_read  — incrementing write

@@ -10,8 +10,7 @@
 #include "hardware/pwm.h"
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
-#include "w5500.h"
-#include "tcp_ip.h"
+#include "protocol.h"
 #include "quadrature_encoder.hpp"
 #include "motor_controller.hpp"
 
@@ -406,18 +405,7 @@ void main_core1(void) {
         }
 
         // Check connection state
-        // Crear función (Se estan combinando capas !!)
-        uint8_t sr = w5500_read_sock_byte(TCP_SOCKET, Sn_SR);
-
-        if (sr == SOCK_CLOSE_WAIT || sr == SOCK_CLOSED) {
-            // Client disconnected — re-arm listener
-            tcp_reconnect();
-            sleep_ms(10);
-            continue;
-        }
-
-        if (sr != SOCK_ESTABLISHED) {
-            // Still waiting for a client to connect — nothing to do
+        if (!is_connected()) {
             sleep_ms(5);
             continue;
         }

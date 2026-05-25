@@ -11,6 +11,7 @@ extern "C" {
 
 bool tcp_init(void);
 bool tcp_open(void);
+uint8_t tcp_check_connection(void) { return w5500_read_sock_byte(TCP_SOCKET, Sn_SR); }
 void tcp_reconnect(void);
 bool tcp_send_packet(uint8_t *data, uint16_t len);
 void tcp_send_response(uint8_t *pkt, motor_report_t res);

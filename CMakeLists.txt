@@ -45,8 +45,6 @@ target_link_libraries(gripper
     hardware_timer
     quadrature_encoder
     motor_controller
-    w5500
-    tcp_transport
     protocol
 )
 
