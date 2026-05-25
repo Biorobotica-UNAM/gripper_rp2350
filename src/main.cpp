@@ -395,15 +395,6 @@ void main_core1(void) {
     }
 
     while (true) {
-        // Get status updates from Core 0
-        // TODO: No debe haber operaciones binarias en main (No es legible !!)
-        while (multicore_fifo_rvalid()) {
-            uint32_t msg   = multicore_fifo_pop_blocking();
-            res.rpm     = (uint16_t)(msg >> 20 & 0x0FFF);
-            res.current = (uint16_t)(msg >> 8 & 0x0FFF);
-            res.status   = (status_t)(msg & 0x00FF);
-        }
-
         // Check connection state
         if (!is_connected()) {
             sleep_ms(5);
