@@ -19,9 +19,9 @@ bool is_connected(void) {
 }
 
 bool protocol_read(protocol_msg_t* msg) {
-    uint8_t header[4];
+    uint8_t header[2];
 
-    if (!tcp_recv_exact(header, 4)) {
+    if (!tcp_recv_exact(header, 2)) {
         return false;
     }
 
@@ -29,9 +29,9 @@ bool protocol_read(protocol_msg_t* msg) {
         ((uint16_t)header[0] << 8) |
          (uint16_t)header[1];
 
-    msg->payload_size = length - 2;
+    msg->payload_size = length;
 
-    if (msg->payload_size > sizeof(msg->payload)) {
+    if (length == 0 || msg->payload_size > sizeof(msg->payload)) {
         return false;
     }
 
@@ -72,14 +72,13 @@ bool protocol_send_packet(
 {
     uint8_t packet[512];
 
-    uint16_t total_length =
-        payload_size + 2;
+    uint16_t total_length = payload_size;
 
     packet[0] = (total_length >> 8) & 0xFF;
     packet[1] = total_length & 0xFF;
 
     memcpy(
-        &packet[4],
+        &packet[2],
         payload,
         payload_size);
 
