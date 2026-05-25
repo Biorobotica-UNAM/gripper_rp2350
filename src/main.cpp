@@ -10,8 +10,7 @@
 #include "hardware/pwm.h"
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
-#include "w5500.h"
-#include "tcp_ip.h"
+#include "protocol.h"
 #include "quadrature_encoder.hpp"
 #include "motor_controller.hpp"
 
@@ -175,6 +174,7 @@ void main_core0(void) {
 
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = IDLE;
                     mutex_exit(&report_mutex);
@@ -190,6 +190,7 @@ void main_core0(void) {
 
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = IDLE;
                     mutex_exit(&report_mutex);
@@ -207,6 +208,7 @@ void main_core0(void) {
 
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = IDLE;
                     mutex_exit(&report_mutex);
@@ -239,6 +241,7 @@ void main_core0(void) {
 
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = IDLE;
                     mutex_exit(&report_mutex);
@@ -266,6 +269,7 @@ void main_core0(void) {
                     
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = REACHED;
                     mutex_exit(&report_mutex);
@@ -280,6 +284,7 @@ void main_core0(void) {
 
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = IDLE;
                     mutex_exit(&report_mutex);
@@ -306,6 +311,7 @@ void main_core0(void) {
                         else {
                             mutex_enter_blocking(&report_mutex);
                             shared_report.rpm     = 0;
+                            shared_report.pos_cnt = quadrature_encoder_get_count();
                             shared_report.current = (uint16_t)current;
                             shared_report.status  = IDLE;
                             mutex_exit(&report_mutex);
@@ -332,6 +338,7 @@ void main_core0(void) {
                         else {
                             mutex_enter_blocking(&report_mutex);
                             shared_report.rpm     = 0;
+                            shared_report.pos_cnt = quadrature_encoder_get_count();
                             shared_report.current = (uint16_t)current;
                             shared_report.status  = IDLE;
                             mutex_exit(&report_mutex);
@@ -372,10 +379,15 @@ void main_core0(void) {
 }
 
 void main_core1(void) {
-    uint16_t actual_rpm     = 0;
-    uint16_t actual_current = 0;
-    status_t motor_status   = IDLE;
-    uint8_t  pkt[8];
+    motor_report_t res = {
+        .rpm     = 0,
+        .current = 0,
+        .pos_cnt = 0,
+        .status  = IDLE
+    };
+
+    protocol_msg_t msg;
+    uint8_t        cmd;
 
     w5500_init_spi();
     sleep_ms(200);
@@ -386,59 +398,25 @@ void main_core1(void) {
     }
 
     if (!tcp_open()) {
-        printf("Open TCP: FAILED\n");
+        printf("Create socket: FAILED\n");
         while (true) tight_loop_contents();
     }
 
     while (true) {
-        // Get status updates from Core 0
-        while (multicore_fifo_rvalid()) {
-            uint32_t msg   = multicore_fifo_pop_blocking();
-            actual_rpm     = (uint16_t)(msg >> 20 & 0x0FFF);
-            actual_current = (uint16_t)(msg >> 8 & 0x0FFF);
-            motor_status   = (status_t)(msg & 0x00FF);
-        }
-
         // Check connection state
-        uint8_t sr = w5500_read_sock_byte(TCP_SOCKET, Sn_SR);
-
-        if (sr == SOCK_CLOSE_WAIT || sr == SOCK_CLOSED) {
-            // Client disconnected — re-arm listener
-            tcp_reconnect();
-            sleep_ms(10);
-            continue;
-        }
-
-        if (sr != SOCK_ESTABLISHED) {
-            // Still waiting for a client to connect — nothing to do
+        if (!is_connected()) {
             sleep_ms(5);
             continue;
         }
 
-        // Check how many bytes are available in RX buffer
-        uint8_t rsr[2];
-        w5500_dma_read(Sn_RX_RSR, BSB_SOCK_REG(TCP_SOCKET), rsr, 2);
-        uint16_t rx_size = ((uint16_t)rsr[0] << 8) | rsr[1];
-
-        // Wait until a full 8-byte command has arrived
-        if (rx_size < 8) {
-            sleep_ms(1);
+        // Wait until the cmd message is received
+        if (!protocol_read(&msg)) {
+            sleep_ms(5);
             continue;
         }
 
-        // Read exactly 8 bytes
-        uint8_t rd_ptr[2];
-        w5500_dma_read(Sn_RX_RD, BSB_SOCK_REG(TCP_SOCKET), rd_ptr, 2);
-        uint16_t rx_rd = ((uint16_t)rd_ptr[0] << 8) | rd_ptr[1];
+        cmd = msg.payload[0];
 
-        w5500_dma_read(rx_rd, BSB_SOCK_RX(TCP_SOCKET), pkt, 8);
-
-        rx_rd += 8;
-        uint8_t new_rd[2] = { rx_rd >> 8, rx_rd & 0xFF };
-        _w5500_write_blocking(Sn_RX_RD, BSB_SOCK_REG(TCP_SOCKET), new_rd, 2);
-        w5500_write_sock_byte(TCP_SOCKET, Sn_CR, Sn_CR_RECV);
-
-        uint8_t  cmd        = pkt[0];
         if (!multicore_fifo_wready()) continue;
 
         while (sem_try_acquire(&report_sem));
@@ -449,13 +427,14 @@ void main_core1(void) {
             sem_acquire_blocking(&report_sem);   // blocks here until Core 0 signals
 
             mutex_enter_blocking(&report_mutex);
-            actual_rpm     = shared_report.rpm;
-            actual_current = shared_report.current;
-            motor_status   = shared_report.status;
+            res.rpm     = shared_report.rpm;
+            res.current = shared_report.current;
+            res.pos_cnt = shared_report.pos_cnt;
+            res.status  = shared_report.status;
             mutex_exit(&report_mutex);
         }
 
-        tcp_send_response(pkt, actual_rpm, actual_current, motor_status);
+        protocol_send_response(&res);
 
         cmd = 0;
     }
