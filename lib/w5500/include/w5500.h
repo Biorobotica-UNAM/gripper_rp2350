@@ -7,6 +7,7 @@
 #include "hardware/irq.h"
 #include "hardware/clocks.h"
 #include "w5500_spi.pio.h"
+#include "w5500_config.h"
 #include <stdint.h>
 #include <string.h>
 

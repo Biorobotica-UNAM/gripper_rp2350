@@ -8,6 +8,5 @@ target_include_directories(tcp_transport PUBLIC
 
 target_link_libraries(tcp_transport
 	pico_stdlib
-	pico_lwip
 	w5500
 )

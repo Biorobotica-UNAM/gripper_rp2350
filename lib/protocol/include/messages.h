@@ -22,3 +22,8 @@ typedef struct {
     int32_t  pos_cnt;
     status_t status;
 } motor_report_t;
+
+typedef struct {
+    uint16_t payload_size;
+    uint8_t  payload[256];
+} protocol_msg_t;

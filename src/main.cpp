@@ -378,8 +378,8 @@ void main_core1(void) {
         .status  = IDLE
     };
 
-    // TODO: Eliminar por completo los pkt (Sobre todo de main !!)
-    uint8_t  pkt[8];
+    protocol_msg_t msg;
+    uint8_t        cmd;
 
     w5500_init_spi();
     sleep_ms(200);
@@ -410,32 +410,14 @@ void main_core1(void) {
             continue;
         }
 
-        // Check how many bytes are available in RX buffer
-        // TODO: All these are driver's functions. Delete from application layer !!
-        uint8_t rsr[2];
-        w5500_dma_read(Sn_RX_RSR, BSB_SOCK_REG(TCP_SOCKET), rsr, 2);
-        uint16_t rx_size = ((uint16_t)rsr[0] << 8) | rsr[1];
-
-        // Wait until a full 8-byte command has arrived
-        if (rx_size < 8) {
-            sleep_ms(1);
+        // Wait until the cmd message is received
+        if (!protocol_read(&msg)) {
+            sleep_ms(5);
             continue;
         }
 
-        // Read exactly 8 bytes
-        uint8_t rd_ptr[2];
-        w5500_dma_read(Sn_RX_RD, BSB_SOCK_REG(TCP_SOCKET), rd_ptr, 2);
-        uint16_t rx_rd = ((uint16_t)rd_ptr[0] << 8) | rd_ptr[1];
+        cmd = msg.payload[0];
 
-        w5500_dma_read(rx_rd, BSB_SOCK_RX(TCP_SOCKET), pkt, 8);
-
-        rx_rd += 8;
-        uint8_t new_rd[2] = { rx_rd >> 8, rx_rd & 0xFF };
-        _w5500_write_blocking(Sn_RX_RD, BSB_SOCK_REG(TCP_SOCKET), new_rd, 2);
-        w5500_write_sock_byte(TCP_SOCKET, Sn_CR, Sn_CR_RECV);
-
-        // TODO: Delete pkt
-        uint8_t  cmd        = pkt[0];
         if (!multicore_fifo_wready()) continue;
 
         while (sem_try_acquire(&report_sem));
@@ -453,8 +435,7 @@ void main_core1(void) {
             mutex_exit(&report_mutex);
         }
 
-        // TODO: Delete pkt !!
-        tcp_send_response(pkt, res);
+        protocol_send_response(&res);
 
         cmd = 0;
     }
