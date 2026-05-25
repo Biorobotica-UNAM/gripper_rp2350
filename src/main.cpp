@@ -174,6 +174,7 @@ void main_core0(void) {
 
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = IDLE;
                     mutex_exit(&report_mutex);
@@ -189,6 +190,7 @@ void main_core0(void) {
 
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = IDLE;
                     mutex_exit(&report_mutex);
@@ -206,6 +208,7 @@ void main_core0(void) {
 
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = IDLE;
                     mutex_exit(&report_mutex);
@@ -238,6 +241,7 @@ void main_core0(void) {
 
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = IDLE;
                     mutex_exit(&report_mutex);
@@ -265,6 +269,7 @@ void main_core0(void) {
                     
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = REACHED;
                     mutex_exit(&report_mutex);
@@ -279,6 +284,7 @@ void main_core0(void) {
 
                     mutex_enter_blocking(&report_mutex);
                     shared_report.rpm     = 0;
+                    shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
                     shared_report.status  = IDLE;
                     mutex_exit(&report_mutex);
@@ -305,6 +311,7 @@ void main_core0(void) {
                         else {
                             mutex_enter_blocking(&report_mutex);
                             shared_report.rpm     = 0;
+                            shared_report.pos_cnt = quadrature_encoder_get_count();
                             shared_report.current = (uint16_t)current;
                             shared_report.status  = IDLE;
                             mutex_exit(&report_mutex);
@@ -331,6 +338,7 @@ void main_core0(void) {
                         else {
                             mutex_enter_blocking(&report_mutex);
                             shared_report.rpm     = 0;
+                            shared_report.pos_cnt = quadrature_encoder_get_count();
                             shared_report.current = (uint16_t)current;
                             shared_report.status  = IDLE;
                             mutex_exit(&report_mutex);
