@@ -78,6 +78,7 @@ static float get_current_speed(int32_t current_count);
 static bool control_callback(repeating_timer_t *rt);
 static int64_t stop_cb(alarm_id_t id, void *user_data);
 static inline bool contact_detected(uint16_t *adc);
+static inline bool close_contact_detected(uint16_t *adc);
 
 int main(void) {
     setup();
@@ -148,8 +149,14 @@ void main_core0(void) {
                     init_entry = false;
                 }
 
-                if (contact_detected(adc_values) || stop) {
+                if (close_contact_detected(adc_values) || stop) {
                     stop = false;
+
+                    if (stop_timer_armed) {
+                        cancel_alarm(stop_alarm_id);
+                        stop_timer_armed = false;
+                    }
+
                     stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
                     stop_timer_armed = true;
                     quadrature_encoder_clean_count();
@@ -518,4 +525,8 @@ void sync_init(void) {
 
 bool contact_detected(uint16_t *adc) {
     return (adc[FSR0_CHANNEL] + adc[FSR1_CHANNEL]) / 2 > FORCE_THR;
+}
+
+bool close_contact_detected(uint16_t *adc) {
+    return (adc[FSR0_CHANNEL] + adc[FSR1_CHANNEL]) / 2 > 300;
 }
