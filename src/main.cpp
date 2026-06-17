@@ -96,15 +96,15 @@ void main_core0(void) {
     static float current_speed;
     static uint16_t raw;
     static uint16_t force;
-    static float current;
-    static bool open_dir = true;
-    static bool close_dir = false;
-    static bool init_entry = true;
-    static bool close = false;     // OPEN: false, CLOSE: true
-    static float setpoint = 0.0f;
     static uint16_t adc_values[3];
-    uint8_t cmd = 0;
     status_t motor_status = INIT;
+    static float current;
+    static bool open_dir     = true;
+    static bool close_dir    = false;
+    static bool init_routine = true;
+    static bool close        = false;     // OPEN: false, CLOSE: true
+    static float setpoint    = 0.0f;
+    uint8_t cmd              = 0;
 
     adc_run(true);
     adc_fifo_drain();
@@ -136,33 +136,13 @@ void main_core0(void) {
             case INIT:
                 // printf("SM_STATE: INIT\n");
 
-                setpoint = SETPOINT;
-                gpio_put(PH_MOTOR_PIN, close_dir);
+                close         = true;
+                quadrature_encoder_clean_count();
 
-                if (init_entry) {
-                    if (stop_timer_armed) {
-                        cancel_alarm(stop_alarm_id);
-                    }
+                stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
+                stop_timer_armed = true;
 
-                    stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
-                    stop_timer_armed = true;
-                    init_entry = false;
-                }
-
-                if (stop) {
-                    stop = false;
-
-                    if (stop_timer_armed) {
-                        cancel_alarm(stop_alarm_id);
-                        stop_timer_armed = false;
-                    }
-
-                    stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
-                    stop_timer_armed = true;
-                    quadrature_encoder_clean_count();
-                    close = true;
-                    motor_status = OPENING;
-                }
+                motor_status = IDLE;
                 break;
 
             case OPENING:
