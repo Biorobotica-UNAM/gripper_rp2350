@@ -36,7 +36,7 @@
 #define GEAR_RATIO      26
 #define OUTPUT_CPR      (CPR * GEAR_RATIO)
 #define OPEN_COUNT      (4 * CPR * GEAR_RATIO)
-#define STOP_TIME_MS    2000
+#define STOP_TIME_MS    1600
 
 #define K_P             0.1f
 #define K_I             0.02f
@@ -46,7 +46,7 @@
 #define SETPOINT        150.0f
 
 #define CURRENT_THR     3.3f  // amps
-#define FORCE_THR       1100  
+#define FORCE_THR       1500  
 
 // --- Initialization ---
 static void main_core0(void);
@@ -128,7 +128,7 @@ void main_core0(void) {
 
             // 1.13 [V/A] (Check DRV8874 datasheet)
             current = 0.885 * adc_values[CS_CHANNEL] * ADC_VREF / ADC_RESOLUTION;
-            // printf("FSR0: %u | FSR1: %u | Current: %.2f\n", adc_values[FSR0_CHANNEL], adc_values[FSR1_CHANNEL], current);
+            printf("FSR0: %u | FSR1: %u | Current: %.2f\n", adc_values[FSR0_CHANNEL], adc_values[FSR1_CHANNEL], current);
             // printf("Current: %.2f [A]\n", current);
         }
 
@@ -149,7 +149,7 @@ void main_core0(void) {
                     init_entry = false;
                 }
 
-                if (close_contact_detected(adc_values) || stop) {
+                if (stop) {
                     stop = false;
 
                     if (stop_timer_armed) {
