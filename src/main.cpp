@@ -128,7 +128,7 @@ void main_core0(void) {
 
             // 1.13 [V/A] (Check DRV8874 datasheet)
             current = 0.885 * adc_values[CS_CHANNEL] * ADC_VREF / ADC_RESOLUTION;
-            printf("FSR0: %u | FSR1: %u | Current: %.2f\n", adc_values[FSR0_CHANNEL], adc_values[FSR1_CHANNEL], current);
+            // printf("FSR0: %u | FSR1: %u | Current: %.2f\n", adc_values[FSR0_CHANNEL], adc_values[FSR1_CHANNEL], current);
             // printf("Current: %.2f [A]\n", current);
         }
 
@@ -342,6 +342,18 @@ void main_core0(void) {
                         stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
                         stop_timer_armed = true;
 
+                        break;
+
+                    default:
+                        mutex_enter_blocking(&report_mutex);
+                        shared_report.rpm     = 0;
+                        shared_report.pos_cnt = quadrature_encoder_get_count();
+                        shared_report.current = (uint16_t)current;
+                        shared_report.status  = IDLE;
+                        mutex_exit(&report_mutex);
+
+                        sem_release(&report_sem);
+                        
                         break;
                 }
                 break;

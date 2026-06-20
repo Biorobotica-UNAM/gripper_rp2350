@@ -1,6 +1,10 @@
 #include "protocol.h"
 
 bool is_connected(void) {
+    if (tcp_had_keepalive_timeout()) {
+        printf("Keep-alive TIMEOUT detectado\n");
+    }
+    
 	uint8_t status = tcp_check_connection();
 
 	if (status == SOCK_CLOSE_WAIT || status == SOCK_CLOSED) {
@@ -19,28 +23,26 @@ bool is_connected(void) {
 }
 
 bool protocol_read(protocol_msg_t* msg) {
-    uint8_t header[2];
+    if (state == WAIT_HEADER) {
+        uint8_t header[2];
+        int16_t r = tcp_recv_exact(header, 2);
+        if (r != 1) return false;   // not enough data yet, or error — try again later
 
-    if (!tcp_recv_exact(header, 2)) {
-        return false;
+        pending_length = ((uint16_t)header[0] << 8) | header[1];
+        if (pending_length == 0 || pending_length > sizeof(msg->payload)) {
+            // Bad length — stream is desynced; safest is to force a reconnect
+            // rather than silently dropping forever.
+            state = WAIT_HEADER;
+            return false;
+        }
+        state = WAIT_PAYLOAD;
     }
 
-    uint16_t length =
-        ((uint16_t)header[0] << 8) |
-         (uint16_t)header[1];
+    int16_t r = tcp_recv_exact(msg->payload, pending_length);
+    if (r != 1) return false;       // header already consumed, payload still pending
 
-    msg->payload_size = length;
-
-    if (length == 0 || msg->payload_size > sizeof(msg->payload)) {
-        return false;
-    }
-
-    if (!tcp_recv_exact(
-            msg->payload,
-            msg->payload_size)) {
-        return false;
-    }
-
+    msg->payload_size = pending_length;
+    state = WAIT_HEADER;            // ready for the next message
     return true;
 }
 

@@ -80,6 +80,11 @@
 #define Sn_MR_UDP         0x02
 #define Sn_MR_MACRAW      0x04
 
+// ── Keep-alive ──────────────────────────────────────────────────────────────
+#define Sn_RTR            0x0019   // Retry Time-value Register (2 bytes, unidad 100us)
+#define Sn_RCR            0x001B   // Retry Count Register (1 byte)
+#define Sn_KPALVTR        0x002F   // Keep Alive Timer Register (1 byte, unidad 5s)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Maximum SPI frame size:
 //   3 bytes header  +  up to N bytes payload

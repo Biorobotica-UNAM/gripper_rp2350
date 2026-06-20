@@ -37,6 +37,13 @@ bool tcp_open(void) {
     sleep_ms(5);
     w5500_write_sock_byte(TCP_SOCKET, Sn_MR,   Sn_MR_TCP);
     w5500_write_sock_u16 (TCP_SOCKET, Sn_PORT, LOCAL_PORT);
+
+    // --- Keep-alive: 1 probe cada 5s, timeout ~ (RTR*RCR) tras dejar de responder ---
+    w5500_set_sock_keepalive(TCP_SOCKET,
+                              /*kpalvtr*/ 1,     // 5s entre probes
+                              /*rtr*/     2000,  // 200ms por reintento
+                              /*rcr*/     3);    // 3 reintentos → ~600ms extra
+
     w5500_write_sock_byte(TCP_SOCKET, Sn_CR,   Sn_CR_OPEN);
     sleep_ms(5);
 
@@ -200,4 +207,13 @@ int16_t tcp_recv_exact(uint8_t *buf, uint16_t length) {
         Sn_CR_RECV);
 
     return true;
+}
+
+bool tcp_had_keepalive_timeout(void) {
+    uint8_t ir = w5500_read_sock_byte(TCP_SOCKET, Sn_IR);
+    if (ir & 0x08) {                                  // bit TIMEOUT
+        w5500_write_sock_byte(TCP_SOCKET, Sn_IR, 0x08); // clear solo ese bit
+        return true;
+    }
+    return false;
 }

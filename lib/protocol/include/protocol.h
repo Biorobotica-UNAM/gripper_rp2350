@@ -3,6 +3,10 @@
 #include "tcp_transport.h"
 #include "messages.h"
 
+typedef enum { WAIT_HEADER, WAIT_PAYLOAD } read_state_t;
+static read_state_t state = WAIT_HEADER;
+static uint16_t pending_length = 0;
+
 #ifdef __cplusplus
 extern "C" {
 #endif

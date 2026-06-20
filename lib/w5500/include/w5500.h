@@ -125,6 +125,9 @@ void w5500_set_pc (const uint8_t pc_ip[4], const uint16_t port,
 uint8_t pio_spi_transfer_byte(uint8_t tx);
 uint8_t read_version_no_dma(void);
 
+void w5500_set_sock_keepalive(uint8_t sn, uint8_t kpalvtr_5s_units,
+                               uint16_t rtr_100us_units, uint8_t rcr_retries);
+
 // DEBUG
 uint8_t read_version_dma_debug(void);
 void debug_write_then_read(void);

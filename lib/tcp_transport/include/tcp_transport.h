@@ -15,6 +15,7 @@ void tcp_reconnect(void);
 uint16_t tcp_available();
 bool tcp_send(const uint8_t *data, uint16_t len);
 int16_t tcp_recv_exact(uint8_t *buf, uint16_t length);
+bool tcp_had_keepalive_timeout(void);
 
 #ifdef __cplusplus
 }

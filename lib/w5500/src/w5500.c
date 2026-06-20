@@ -258,6 +258,19 @@ uint8_t read_version_no_dma(void) {
     return result;
 }
 
+void w5500_set_sock_keepalive(uint8_t sn, uint8_t kpalvtr_5s_units,
+                               uint16_t rtr_100us_units, uint8_t rcr_retries)
+{
+    // Tiempo de retransmisión para SYN/datos/keepalive (también afecta connect)
+    w5500_write_sock_u16(sn, Sn_RTR, rtr_100us_units);
+
+    // Cantidad de reintentos antes de declarar TIMEOUT
+    w5500_write_sock_byte(sn, Sn_RCR, rcr_retries);
+
+    // Intervalo de keep-alive (0 = deshabilitado)
+    w5500_write_sock_byte(sn, Sn_KPALVTR, kpalvtr_5s_units);
+}
+
 // DEBUG
 
 uint8_t read_version_dma_debug(void) {
