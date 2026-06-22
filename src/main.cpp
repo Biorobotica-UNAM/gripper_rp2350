@@ -46,7 +46,7 @@
 #define SETPOINT        150.0f
 
 #define CURRENT_THR     3.3f  // amps
-#define FORCE_THR       1500  
+#define FORCE_THR       2000  
 
 // --- Initialization ---
 static void main_core0(void);
@@ -516,7 +516,7 @@ void sync_init(void) {
 }
 
 bool contact_detected(uint16_t *adc) {
-    return (adc[FSR0_CHANNEL] + adc[FSR1_CHANNEL]) / 2 > FORCE_THR;
+    return (adc[FSR0_CHANNEL] > FORCE_THR || adc[FSR1_CHANNEL] > FORCE_THR);
 }
 
 bool close_contact_detected(uint16_t *adc) {
