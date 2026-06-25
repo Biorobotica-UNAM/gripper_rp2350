@@ -10,6 +10,7 @@
 #include "hardware/pwm.h"
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
+#include "flash.h"
 #include "protocol.h"
 #include "quadrature_encoder.hpp"
 #include "motor_controller.hpp"
@@ -36,7 +37,7 @@
 #define GEAR_RATIO      26
 #define OUTPUT_CPR      (CPR * GEAR_RATIO)
 #define OPEN_COUNT      (4 * CPR * GEAR_RATIO)
-#define STOP_TIME_MS    1600
+#define STOP_TIME_MS    2400
 
 #define K_P             0.1f
 #define K_I             0.02f
@@ -136,7 +137,7 @@ void main_core0(void) {
             case INIT:
                 // printf("SM_STATE: INIT\n");
 
-                close         = true;
+                close         = flash_read();
                 quadrature_encoder_clean_count();
 
                 stop_alarm_id = add_alarm_in_ms(STOP_TIME_MS, stop_cb, NULL, false);
@@ -168,7 +169,7 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
-                    close = false;
+                    flash_write(false);
                     motor_status = IDLE;
                     break;
                 } else if (stop) {
@@ -184,7 +185,7 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
-                    close = false;
+                    flash_write(false);
                     motor_status = IDLE;
                     break;
                 }
@@ -202,7 +203,7 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
-                    close = false;
+                    flash_write(false);
                     motor_status = IDLE;
                     break;
                 }
@@ -235,7 +236,7 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
-                    close = true;
+                    flash_write(true);
                     motor_status = IDLE;
                     break;
                 }
@@ -263,7 +264,7 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
-                    close = true;
+                    flash_write(true);
                     motor_status = IDLE;
                 } else if (stop) {
                     stop = false;
@@ -278,7 +279,7 @@ void main_core0(void) {
 
                     sem_release(&report_sem);
 
-                    close = true;
+                    flash_write(true);
                     motor_status = IDLE;
                     break;
                 }
@@ -288,6 +289,8 @@ void main_core0(void) {
             case IDLE: 
                 // printf("SM_STATE: IDLE\n");
                 
+                close = flash_read();
+
                 switch (cmd) {
                     case OPEN:
                         printf("Command received: OPEN\n");

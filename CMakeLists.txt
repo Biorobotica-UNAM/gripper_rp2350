@@ -43,6 +43,7 @@ target_link_libraries(gripper
     hardware_pwm
     hardware_gpio
     hardware_timer
+    flash
     quadrature_encoder
     motor_controller
     protocol

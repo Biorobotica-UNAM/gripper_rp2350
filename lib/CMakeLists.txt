@@ -1,5 +1,6 @@
 add_subdirectory(quadrature_encoder)
-add_subdirectory(motor_controller)
+add_subdirectory(flash)
 add_subdirectory(w5500)
 add_subdirectory(tcp_transport)
 add_subdirectory(protocol)
+add_subdirectory(motor_controller)
