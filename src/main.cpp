@@ -183,7 +183,7 @@ void main_core0(void) {
                     shared_report.rpm     = 0;
                     shared_report.pos_cnt = quadrature_encoder_get_count();
                     shared_report.current = (uint16_t)current;
-                    shared_report.status  = REACHED;
+                    shared_report.status  = IDLE;
                     mutex_exit(&report_mutex);
 
                     sem_release(&report_sem);
